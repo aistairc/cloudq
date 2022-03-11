@@ -47,63 +47,157 @@ Cloudq Agent
 
 ## Installation
 
-### Cloudq Client
+### CloudQ Client
 
-Cloudq Client need to be installed on computers where you submit jobs.
+CloudQ Client need to be installed on computers where you submit jobs.
+
+Install from PyPI.
 
 ```console
-$ aws configure
-$ aws --endpoint-url https://s3.abci.ai s3 mb s3://cloudq
+$ pip install cloudq
+```
 
+Install from GitHub.
+
+```console
 $ git clone git@github.com:aistairc/cloudq.git
 $ cd cloudq
-$ vi cloudq/data/config.ini
-    <set system name and cloud storage configuration>
-$ vi cloudq/data/project.ini
-    <set your project name (*)>
-$ vi cloudq/data/resource.ini
-    <set resource types that you want to use (*)>
-
-$ pip3 install -r requirements.txt
-$ pip3 install .
+$ pip install -r requirements.txt
+$ pip install .
 ```
 
-(*) Setup is required when you use meta jobscript.
+### CloudQ Agent
 
-### Cloudq Agent
+A CloudQ Agent need to be installed on a server on which the Agent can submit jobs to the system you want to use.
 
-A Cloudq Agent need to be installed on a server on which the Agent can submit jobs to the job scheduler of the target system.
+To install Agent, you need to specify one of the optional dependencies for a system where you use CloudQ: `abci`.
+
+Below is an example to install CloudQ Agent for ABCI.
 
 ```console
-$ aws configure
-$ aws --endpoint-url https://s3.abci.ai s3 mb s3://cloudq
+$ pip install 'cloudq[abci]'
+```
 
+Install from GitHub.
+
+```console
 $ git clone git@github.com:aistairc/cloudq.git
 $ cd cloudq
-$ vi cloudq/data/config.ini
-    <set system name and cloud storage configuration>
-
-$ pip3 install -r requirements.txt
-$ pip3 install .
+$ pip install -r requirements.txt
+$ pip install -r requirements_abci.txt
+$ pip install .
 ```
 
-### Change Configuration after Installation
 
-To change the configuration after installation, you need to edit configuration files under
-Python package directory.
-The configuration files are stored in `(Python package directory)/cloudq/data/`.
+## Configure CloudQ
 
-The path of the Python package directory can be found with the following command.
+### Job Bucket for CloudQ
+
+You need to create a bucket to store jobs on an Amazon S3 compatible object storage.
+The following example creates a bucket on [ABCI Cloud Storage](https://abci.ai/en/how_to_use/cloudstorage.html) having a URL `s3://cloudq`.
+It configures an AWS profile named `abci` to use ABCI Cloud Storage.
 
 ```console
-$ pip3 show cloudq
+$ aws configure --profile abci
+AWS Access Key ID [None]: <YOUR INPUT>
+AWS Secret Access Key [None]: <YOUR INPUT>
+Default region name [None]: <YOUR INPUT>
+Default output format [None]: <YOUR INPUT>
+
+$ aws --profile abci --endpoint-url https://s3.abci.ai s3 mb s3://cloudq
 ```
 
-You can open to edit `cloudq/data/config.ini` by the following command.
+### Procedure for Changing Configuration
+
+To change the configuration after installation, you need to edit configuration files under the installed package directory.
+The configuration files are stored in `(package directory)/cloudq/data/`.
+
+The path of the package directory can be found with the following command.
 
 ```console
-$ vi `pip3 show cloudq | grep Location | cut -d ' ' -f 2`/cloudq/data/config.ini
+$ pip show cloudq
 ```
+
+You can open to edit `(package directory)/cloudq/data/config.ini` by the following command.
+
+```console
+$ vi `pip show cloudq | grep Location | cut -d ' ' -f 2`/cloudq/data/config.ini
+```
+
+### Configure Client
+
+You need to edit `default` section of `(package directory)/cloudq/data/config.ini`.
+
+```ini
+[default]
+name = your_system_name
+
+aws_profile = abci
+
+cloudq_endpoint_url = https://s3.abci.ai
+cloudq_bucket = cloudq
+```
+
+- **name**: name of the server you use CloudQ Client
+- **aws_profile**: AWS profile used for accessing the job bucket
+- **cloudq_endpoint_url**: endpoint URL of the object storage
+- **cloudq_bucket**: name of the job bucket
+
+If you want to use meta jobscripts, you also need to edit two meta jobscript configuration files.
+
+One is the project definition file whose path is `(package directory)/cloudq/data/project.ini`.
+A project is used to define a research project and it can be used for resource authorization or charge on systems.
+On ABCI, a project corresponds to an ABCI group.
+
+This is an example configuration of the project definition file.
+
+```ini
+[project001]
+abci = gXXYYYYY
+```
+
+The other is the resource definition file whose path is `(package directory)/cloudq/data/resource.ini`.
+A resource is a type of server on which your jobs run.
+On ABCI, a resource corresponds to a resource type.
+
+This is an example configuration of the resource definition file.
+
+```ini
+[resource001]
+abci = rt_G.small
+
+[resource002]
+abci = rt_G.large
+```
+
+### Configure Agent
+
+You need to edit `default` and `agent` sections of `(package directory)/cloudq/data/config.ini`.
+
+```ini
+[default]
+name = your_system_name
+
+aws_profile = abci
+
+cloudq_endpoint_url = https://s3.abci.ai
+cloudq_bucket = cloudq
+
+[agent]
+num_procs = 8
+daemon_interval = 5
+cloudq_directory = ~/.cloudq
+```
+
+- **default**
+  - **name**: name of the server you use CloudQ Client
+  - **aws_profile**: AWS profile used for accessing the job bucket
+  - **cloudq_endpoint_url**: endpoint URL of the object storage
+  - **cloudq_bucket**: name of the job bucket
+- **agent**
+  - **num_procs**: number of processes that submit jobs to the system
+  - **daemon_interval**: time interval in seconds at which Agent checks jobs in the job bucket
+  - **cloudq_directory**: a directory where jobs and logs are stored
 
 
 ## Usage
