@@ -429,7 +429,8 @@ def checknrun():
         upload_agent_log(config, _bucket)
 
     try:
-        s3cli = boto3.client('s3', endpoint_url=endpoint_url)
+        session = boto3.Session(profile_name=aws_profile)
+        s3cli = session.client('s3', endpoint_url=endpoint_url)
         objs = s3cli.list_objects(Bucket=root_bucket, Delimiter='/')
         if not objs.get('CommonPrefixes'):
             return
