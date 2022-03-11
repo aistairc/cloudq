@@ -54,6 +54,13 @@ setuptools.setup(
     author_email='shinichiro.takizawa@aist.go.jp',
     description='A cloud storage-based meta scheduler.',
     long_description=LONG_DESCRIPTION,
+    long_description_content_type='text/markdown',
+    url='https://github.com/aistairc/cloudq',
+    classifiers=[
+        'Programming Language :: Python :: 3.6',
+        'License :: OSI Approved :: Apache Software License',
+        'Operating System :: OS Independent',
+    ],
     # options
     packages=setuptools.find_packages(),
     include_package_data=True,
