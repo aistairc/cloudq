@@ -139,6 +139,8 @@ For detail about installation and configuration, refer to the [installation guid
    Run Agent on ABCI head node using a terminal multiplexer, such as screen and tmux, so that the Agent can live long.
 
    ```console
-   [username@es1 ~](cloudq) $ screen
+   [username@es1 ~]$ screen
+   [username@es1 ~]$ module load gcc/9.3.0 python/3.8
+   [username@es1 ~]$ . ~/cloudq/bin/activate
    [username@es1 ~](cloudq) $ cloudqd --daemon
    ```

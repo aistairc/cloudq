@@ -11,7 +11,7 @@ We set the following assumptions.
 - Your PC satisfies CloudQ requirements
 - CloudQ Client and Builder for AWS will be installed on your PC
 - You will use CloudQ Builder for AWS to create the compute cluster on AWS
-- You will use AWS Tokyo region
+- You will use AWS Tokyo region (ap-northeast-1)
 - You will use a cluster with the following configuration
   - CloudQ default VPC
   - eight `t2.micro` instances and eight `t2.small` instances at maximum
@@ -54,7 +54,6 @@ For detail about installation and configuration, refer to the [installation guid
 
    ```console
    $ aws --endpoint-url https://s3.ap-northeast-1.amazonaws.com s3 mb s3://cloudq-xxxxx
-   # $ aws --profile cloudq_job --endpoint-url https://s3.ap-northeast-1.amazonaws.com s3 mb s3://cloudq-xxxxx
    ```
 
 3. Create a SSH key pair for accessing the head node of AWS compute cluster
@@ -81,7 +80,7 @@ For detail about installation and configuration, refer to the [installation guid
 
 5. Edit configuration files for your AWS cluster
 
-   Edit `Scheduling::SlurmQueues::ComputeResources` section so that `t2.micro` and `t2.small` instances can be used.
+   Edit `Scheduling::SlurmQueues::ComputeResources` section of `(package directory)/cloudq/aws/data/cluster-config.yaml` so that `t2.micro` and `t2.small` instances can be used.
 
    ```yaml
    (snip)
