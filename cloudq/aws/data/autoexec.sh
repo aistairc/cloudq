@@ -1,7 +1,4 @@
-#!/bin/sh
-#$ -l rt_G.small=1
-#$ -cwd
-#$-l h_rt=01:00:00
+#!/bin/bash
 #
 #======================================================================================
 # Copyright 2022
@@ -20,22 +17,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #======================================================================================
-#
-# Submission Example
-# $ cloudqcli submit --script ljob_pt_mnist.abci.sh --submit_to abci \
-#                    --submit_opt '-g YOUR_GROUP'
-
-source /etc/profile
-source /etc/profile.d/modules.sh
-module load singularitypro/3.7
-
-export TMPDIR=$SGE_LOCALDIR
-
-SIGURL=docker://nvcr.io/nvidia/pytorch:20.12-py3
-SIGFILE=pytorch-20.12-py3.img
-
-singularity pull $SIGFILE $SIGURL
-wget -O cnn_mnist.py https://raw.githubusercontent.com/pytorch/examples/master/mnist/main.py
-singularity exec --nv $SIGFILE python cnn_mnist.py
-
-rm $SIGFILE
+export PATH=$PATH:/opt/slurm/bin/
+/usr/local/bin/cloudqd --daemon

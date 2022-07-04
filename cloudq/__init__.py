@@ -1,6 +1,6 @@
 # cloudq: cloud storage-based meta scheduler
 #
-# Copyright 2021
+# Copyright 2022
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -15,4 +15,4 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-__version__ = '1.0.2'
+__version__ = '1.1.0'

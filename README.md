@@ -1,8 +1,8 @@
-# Cloudq
+# CloudQ
 
 Cloud storage-based meta scheduler
 
-Copyright 2021 National Institute of Advanced Industrial Science and Technology (AIST), Japan and
+Copyright 2022 National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 Hitachi, Ltd.
 
 This program is licensed under the Apache License, Version2.0.
@@ -10,207 +10,88 @@ This program is licensed under the Apache License, Version2.0.
 
 ## Overview
 
-Cloudq is a meta scheduler that submits jobs to and manages them on clouds or supercomputers in which compute nodes are managed by job schedulers.
+CloudQ is a job management system that targets on executing AI/HPC tasks on on-premise systems, cloud and supercomputers with a unified interface.
 It has the following features.
 
 - Input, output and status of jobs are stored on an Amazon S3 compatible object storage.
 - User can write a jobscript in two formats; **local jobscript** and **meta jobscript**.
-  A job described in meta jobscript can run on any cloud or supercomputer managed under Cloudq.
+  A job described in meta jobscript can run on any systems managed under CloudQ.
   A job described in local jobscript runs only on a specific system, but the job can use all functions the system provides.
-- The installation of Cloudq does not require administrator privileges.
+- The installation and administration of CloudQ do not require administrator privileges.
 
-Cloudq consists of two components.
+CloudQ consists of two components.
 
-One is **Agent** which submits jobs to and manages them on a system.
-If you have accounts on multiple clouds or supercomputers, you can submit jobs to them using Cloudq by installing Agents on them.
+One is **Agent** which submits jobs and manages them on a system.
+If you have accounts on multiple clouds or supercomputers, you can submit jobs to them using CloudQ by installing Agents on them.
 
-Currently, Cloudq Agent supports the following systems.
+Currently, CloudQ Agent supports the following systems.
 
-- [ABCI](https://abci.ai//)
+- [ABCI](https://abci.ai/)
+- [Amazon Web Services (AWS)](https://aws.amazon.com/)
 
-The other Cloudq component is **Client**.
-By using Client on a user's terminal, user can submit and manage jobs on Cloudq.
+The second CloudQ component is **Client**.
+By using Client on a user's terminal, user can submit and manage jobs on CloudQ.
 
+![CloudQ Architecture](/docs/fig_cloudq_arch.png)
+
+CloudQ provides an additional component named **Builder**.
+Builder helps setting up compute clusters on clouds.
+
+Currently, CloudQ Builder for AWS is available.
+CloudQ Builder for AWS creates clusters using Slurm as their job scheduler.
+It installs CloudQ Agent on cluster's head node.
 
 ## Requirements
 
-Cloudq Client
+CloudQ Client
 - OS: Linux, MacOS and Windows
-- Python: 3.6 or newer (Tested on Python 3.8.7)
-- AWS CLI: 2.0 or newer (Tested on AWS CLI 2.1.30)
+- Python: 3.8 or newer (Tested on Python 3.8.7)
+- AWS CLI: 2.1.30 or newer (Tested on AWS CLI 2.1.30)
 
-Cloudq Agent
-- OS: Linux compatible OS (Tested on CentOS 7.5)
-- Python: 3.6 or newer (Tested on Python 3.8.7)
-- AWS CLI: 2.0 or newer (Tested on AWS CLI 2.1.30)
+CloudQ Agent
+- OS: Linux compatible OS (Tested on CentOS 7.5 and Amazon Linux 2)
+- Python: 3.8 or newer (Tested on Python 3.8.7)
+- AWS CLI: 2.1.30 or newer (Tested on AWS CLI 2.1.30)
+
+CloudQ Builder for AWS
+- OS: Linux, MacOS and Windows
+- Python: 3.8 or newer (Tested on Python 3.8.7)
+- AWS CLI: 2.1.30 or newer (Tested on AWS CLI 2.1.30)
+- AWS ParallelCluster: 3.0.3
 
 
 ## Installation
 
-### CloudQ Client
+[Installation Guide](/docs/INSTALLATION_GUIDE.md) describes how to install and configure CloudQ.
 
-CloudQ Client need to be installed on computers where you submit jobs.
+The following documents describe how to setup CloudQ environment in a specific scenario.
 
-Install from PyPI.
+1. [Use ABCI](/docs/EXAMPLE_ABCI.md)
+   - Use ABCI as the compute resource and ABCI Cloud Storage as the job storage.
 
-```console
-$ pip install cloudq
-```
+2. [Use AWS](/docs/EXAMPLE_AWS.md)
+   - Use AWS as the compute resource and the job storage.
 
-Install from GitHub.
-
-```console
-$ git clone git@github.com:aistairc/cloudq.git
-$ cd cloudq
-$ pip install -r requirements.txt
-$ pip install .
-```
-
-### CloudQ Agent
-
-A CloudQ Agent need to be installed on a server on which the Agent can submit jobs to the system you want to use.
-
-To install Agent, you need to specify one of the optional dependencies for a system where you use CloudQ: `abci`.
-
-Below is an example to install CloudQ Agent for ABCI.
-
-```console
-$ pip install 'cloudq[abci]'
-```
-
-Install from GitHub.
-
-```console
-$ git clone git@github.com:aistairc/cloudq.git
-$ cd cloudq
-$ pip install -r requirements.txt
-$ pip install -r requirements_abci.txt
-$ pip install .
-```
-
-
-## Configure CloudQ
-
-### Job Bucket for CloudQ
-
-You need to create a bucket to store jobs on an Amazon S3 compatible object storage.
-The following example creates a bucket on [ABCI Cloud Storage](https://abci.ai/en/how_to_use/cloudstorage.html) having a URL `s3://cloudq`.
-It configures an AWS profile named `abci` to use ABCI Cloud Storage.
-
-```console
-$ aws configure --profile abci
-AWS Access Key ID [None]: <YOUR INPUT>
-AWS Secret Access Key [None]: <YOUR INPUT>
-Default region name [None]: <YOUR INPUT>
-Default output format [None]: <YOUR INPUT>
-
-$ aws --profile abci --endpoint-url https://s3.abci.ai s3 mb s3://cloudq
-```
-
-### Procedure for Changing Configuration
-
-To change the configuration after installation, you need to edit configuration files under the installed package directory.
-The configuration files are stored in `(package directory)/cloudq/data/`.
-
-The path of the package directory can be found with the following command.
-
-```console
-$ pip show cloudq
-```
-
-You can open to edit `(package directory)/cloudq/data/config.ini` by the following command.
-
-```console
-$ vi `pip show cloudq | grep Location | cut -d ' ' -f 2`/cloudq/data/config.ini
-```
-
-### Configure Client
-
-You need to edit `default` section of `(package directory)/cloudq/data/config.ini`.
-
-```ini
-[default]
-name = your_system_name
-
-aws_profile = abci
-
-cloudq_endpoint_url = https://s3.abci.ai
-cloudq_bucket = cloudq
-```
-
-- **name**: name of the server you use CloudQ Client
-- **aws_profile**: AWS profile used for accessing the job bucket
-- **cloudq_endpoint_url**: endpoint URL of the object storage
-- **cloudq_bucket**: name of the job bucket
-
-If you want to use meta jobscripts, you also need to edit two meta jobscript configuration files.
-
-One is the project definition file whose path is `(package directory)/cloudq/data/project.ini`.
-A project is used to define a research project and it can be used for resource authorization or charge on systems.
-On ABCI, a project corresponds to an ABCI group.
-
-This is an example configuration of the project definition file.
-
-```ini
-[project001]
-abci = gXXYYYYY
-```
-
-The other is the resource definition file whose path is `(package directory)/cloudq/data/resource.ini`.
-A resource is a type of server on which your jobs run.
-On ABCI, a resource corresponds to a resource type.
-
-This is an example configuration of the resource definition file.
-
-```ini
-[resource001]
-abci = rt_G.small
-
-[resource002]
-abci = rt_G.large
-```
-
-### Configure Agent
-
-You need to edit `default` and `agent` sections of `(package directory)/cloudq/data/config.ini`.
-
-```ini
-[default]
-name = your_system_name
-
-aws_profile = abci
-
-cloudq_endpoint_url = https://s3.abci.ai
-cloudq_bucket = cloudq
-
-[agent]
-num_procs = 8
-daemon_interval = 5
-cloudq_directory = ~/.cloudq
-```
-
-- **default**
-  - **name**: name of the server you use CloudQ Client
-  - **aws_profile**: AWS profile used for accessing the job bucket
-  - **cloudq_endpoint_url**: endpoint URL of the object storage
-  - **cloudq_bucket**: name of the job bucket
-- **agent**
-  - **num_procs**: number of processes that submit jobs to the system
-  - **daemon_interval**: time interval in seconds at which Agent checks jobs in the job bucket
-  - **cloudq_directory**: a directory where jobs and logs are stored
+3. Use ABCI and AWS (coming soon)
+   - Use ABCI and AWS as the compute resources and ABCI Cloud Storage as the job storage.
 
 
 ## Usage
 
-### Agent Side (On Machines where Cloudq Agent Runs)
+### Agent
+
+In an environment where CloudQ Agent does not run automatically, you need to launch CloudQ Agent as follows.
 
 ```console
 $ cloudqd --daemon
 ```
 
-### Client Side
+On compute clusters built by Builder for AWS, CloudQ Agent automatically starts.
+
+### Client
 
 #### Submit a Job
+
 The following example submits a job described in local jobscript.
 
 ```console
@@ -227,6 +108,7 @@ Job (e210c27c) mjob_tf_mnist.sh has been submitted.
 ```
 
 #### Submit a Dependent Job
+
 The following example submits a job that depends on other jobs.
 
 ```console
@@ -237,6 +119,7 @@ Job (fc2d6f45) ljob_tf_mnist.abci.sh has been submitted.
 ```
 
 #### Submit an Array Job
+
 The following example submits an array job.
 
 ```console
@@ -287,6 +170,7 @@ Job (e210c27c) is canceled.
 ```
 
 #### Display Log Messages
+
 The following example display stdout messages of a job.
 
 ```console
@@ -301,7 +185,7 @@ $ cloudqcli log --id 3f7e7681 --error
     <display stdout of the job>
 ```
 
-The following example display log messages of an Cloudq Agent.
+The following example display log messages of an CloudQ Agent.
 
 ```console
 $ cloudqcli log --agent YOUR_SYSTEM
@@ -316,6 +200,7 @@ $ cloudqcli stageout --id 3f7e7681
 ```
 
 #### Delete Jobs or Agent logs
+
 The following example deletes a completed job.
 
 ```console
@@ -359,23 +244,68 @@ $ cloudqcli history
     e210c27c      mjob_tf_mnist.sh      DONE        abci  2021/01/13 09:55:34  2021/01/13 10:06:16  2021/01/13 10:06:33
 ```
 
+### Builder for AWS
+
+CloudQ Builder for AWS is provided as `cloudqaws` command.
+It uses AWS default profile to build a cluster.
+Be aware that the AWS default profile is properly set.
+
+#### Create a Cluster
+
+`cloudqaws create` creates a cluster on AWS.
+Before creating a cluster, you need to set up an SSH key pairs to log in to the cluster head node.
+
+```console
+$ cloudqaws create --name your-cluster-name \
+                   --keypair YOUR-KEYPAIR-NAME \
+                   --cs_profile abci --cs_endpoint https://s3.abci.ai \
+                   --cs_bucket cloudq
+The stack (your-cluster-name-vpc) is creating. Please wait a minute.
+The stack (your-cluster-name-nodes) is creating. Please wait a minute.
+AWS compute cluster (your-cluster-name) has been created.
+```
+
+#### List Clusters
+
+`cloudqaws list` shows you status of compute clusters you requested to create.
+
+```console
+$ cloudqaws list
+Cluster Name     Status     Creation Time
+---------------------------------------------------
+your-cluster-01  COMPLETED  2022/01/23 11:22:33 UTC
+your-cluster-02  COMPLETED  2022/02/01 23:59:59 UTC
+your-cluster-03  CREATING
+your-cluster-04  FAILED
+```
+
+#### Delete a Cluster
+
+```console
+$ cloudqaws delete --name your-cluster-name
+The stack (your-cluster-name-nodes) is deleting. Please wait a minute.
+The stack (your-cluster-name-vpc) is deleting. Please wait a minute.
+AWS compute cluster (your-cluster-name) has been deleted.
+```
+
+
 ## Meta Jobscript
 
-Meta jobscript is introduced to write a jobscript that runs on any systems Cloudq supports.
-A jobscript written in Meta jobscript is converted to a local jobscript by a Cloudq agent when it receives a job.
+Meta jobscript is introduced to write a jobscript that runs on any systems CloudQ supports.
+A jobscript written in Meta jobscript is converted to a local jobscript by a CloudQ agent when it receives a job.
 Meta jobscript can use the following directives, functions and environment variables.
 
 ### Directives
 
-|  Name  |  Explanation  |
-| ---- | ---- |
-|  run_on  |  [Optional] Name of a system that runs the job. If not specified, the job will be executed on the earliest scheduled system.  |
-|  project  |  [Mandatory] Name of a research project.  It can be used for charge on some systems.  |
-|  resource  |  [Mandatory] Name of resource type used to run the job.  |
-|  n_resource  |  [Mandatory] Number of resources used to run the job.  |
-|  walltime  |  [Optional] Walltime requested.  If not specified, the default walltime on the system is applied.  |
-|  other_opts  |  [Optional] Options to the job submission command appended when the job is submitted.  |
-|  container_img  |  [Optional] URL of container image used in the job.  It can be specified multiple times.  |
+|  Name  |  Explanation  | ABCI | AWS Compute Cluster |
+| ---- | ---- | ---- | ---- |
+|  run_on  |  [Optional] Name of a system that runs the job. If not specified, the job will be executed on the earliest scheduled system.  | Available | Available |
+|  project  |  [Mandatory] Name of a research project.  It can be used for charge on some systems.  | Available | Unavailable |
+|  resource  |  [Mandatory] Name of resource type used to run the job.  | Available | Available |
+|  n_resource  |  [Mandatory] Number of resources used to run the job.  | Available | Available |
+|  walltime  |  [Optional] Walltime requested.  If not specified, the default walltime on the system is applied.  | Available | Available |
+|  other_opts  |  [Optional] Options to the job submission command appended when the job is submitted.  | Available | Available |
+|  container_img  |  [Optional] URL of container image used in the job.  It can be specified multiple times.  | Available | Unavailable |
 
 ### Functions
 
@@ -392,6 +322,10 @@ Arguments
 - IMG:	Path of a container image.
 - CMD:	A command and its options executed in the container.
 
+Availability
+- ABCI: Available
+- AWS Compute Cluster: Unavailable
+
 #### Copy Cloud Storage Object
 
 ```shell
@@ -406,16 +340,20 @@ Arguments
 - ENDPOINT:	 URL of cloud storage endpoint.  It not specified, the endpoint URL specified in configuration file is used.
 - PROFILE:	Name of AWS profile. If not specified, the AWS profile specified in configuration file is used.
 
+Availability
+- ABCI: Available
+- AWS Compute Cluster: Available
+
 ### Environment Variables
 
-|  Name  |  Explanation  |
-| ---- | ---- |
-|  SYSTEM  |  Name of a system that runs the job.  |
-|  CONTAINER_IMG#  |  File name of a container image.  # will be replaced by a serial number starting with 0.  |
-|  ARY_TASK_ID  |  Task ID of an array job.  |
-|  ARY_TASK_FIRST  |  Task ID of the first task of an array job.  |
-|  ARY_TASK_LAST  |  Task ID of the last task of an array job.  |
-|  ARY_TASK_STEPSIZE  |  Step size of IDs of an array job.  |
+|  Name  |  Explanation  | ABCI | AWS Compute Cluster |
+| ---- | ---- | ---- | ---- |
+|  SYSTEM  |  Name of a system that runs the job.  | Available | Available |
+|  CONTAINER_IMG#  |  File name of a container image.  # will be replaced by a serial number starting with 0.  | Available | Unavailable |
+|  ARY_TASK_ID  |  Task ID of an array job.  | Available | Available |
+|  ARY_TASK_FIRST  |  Task ID of the first task of an array job.  | Available | Available |
+|  ARY_TASK_LAST  |  Task ID of the last task of an array job.  | Available | Available |
+|  ARY_TASK_STEPSIZE  |  Step size of IDs of an array job.  | Available | Available |
 
 ### Example
 

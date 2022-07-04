@@ -1,7 +1,4 @@
-#!/bin/sh
-#$ -l rt_G.small=1
-#$ -cwd
-#$-l h_rt=01:00:00
+#!/bin/bash
 #
 #======================================================================================
 # Copyright 2022
@@ -20,22 +17,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #======================================================================================
-#
-# Submission Example
-# $ cloudqcli submit --script ljob_pt_mnist.abci.sh --submit_to abci \
-#                    --submit_opt '-g YOUR_GROUP'
+echo "on-compute-node-start script was started. args: $#"
 
-source /etc/profile
-source /etc/profile.d/modules.sh
-module load singularitypro/3.7
+amazon-linux-extras install -y python3.8
 
-export TMPDIR=$SGE_LOCALDIR
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+./aws/install
 
-SIGURL=docker://nvcr.io/nvidia/pytorch:20.12-py3
-SIGFILE=pytorch-20.12-py3.img
-
-singularity pull $SIGFILE $SIGURL
-wget -O cnn_mnist.py https://raw.githubusercontent.com/pytorch/examples/master/mnist/main.py
-singularity exec --nv $SIGFILE python cnn_mnist.py
-
-rm $SIGFILE
+echo "on-compute-node-start script was completed."

@@ -1,6 +1,6 @@
 # setup: cloudq setup script
 #
-# Copyright 2021
+# Copyright 2022
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -65,19 +65,21 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     include_package_data=True,
     package_data={
-        PACKAGE_NAME: ['data/*', 'example/*'],
+        PACKAGE_NAME: ['data/*', 'example/*', 'aws/*', 'aws/data/*'],
     },
     zip_safe=False,
     platforms='any',
-    python_requires='>=3.6',
+    python_requires='>=3.8',
     install_requires=read_requirements(),
     extras_require={
         'abci': read_requirements('abci'),
+        'aws': read_requirements('aws'),
     },
     entry_points={
         'console_scripts': [
             'cloudqcli = {}.client:main'.format(PACKAGE_NAME),
             'cloudqd = {}.agent:main'.format(PACKAGE_NAME),
+            'cloudqaws = {}.aws.cloudqaws:main'.format(PACKAGE_NAME),
         ],
     },
 )

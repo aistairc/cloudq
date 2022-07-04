@@ -1,6 +1,6 @@
 # agent: cloudq agent
 #
-# Copyright 2021
+# Copyright 2022
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -28,12 +28,12 @@ import sys
 import time
 import traceback
 from enum import Enum
-
 import boto3
 from pathos.multiprocessing import ProcessingPool
-
-from .common import get_manifest, put_manifest, current_time, iso_to_datetime, is_exist_bucket_object, is_finished_job
-from .common import STAGEOUT_FILE, CANCEL_FILE, PROJECT_DEF_FILE, RESOURCE_DEF_FILE, AGENT_LOG_PREFIX
+from .common import (get_manifest, put_manifest, current_time, iso_to_datetime,
+                     is_exist_bucket_object, is_finished_job)
+from .common import (STAGEOUT_FILE, CANCEL_FILE, PROJECT_DEF_FILE,
+                     RESOURCE_DEF_FILE, AGENT_LOG_PREFIX)
 from .common import JOB_STATE, MANIFEST_PARAMS, SCRIPT_TYPES
 from .interface import JobManagerAccessor
 from .interface import MetaJobScriptConverterAccessor
@@ -61,13 +61,22 @@ PATTERN_LOG_FILE = r'std(out|err)\S*$'
 '''
 
 CONFIG_PARAMS = [
-    {'section': 'default',  'key': 'name',                   'type': str, 'mandatory': True},
-    {'section': 'default',  'key': 'aws_profile',            'type': str, 'mandatory': True},
-    {'section': 'default',  'key': 'cloudq_endpoint_url',    'type': str, 'mandatory': True},
-    {'section': 'default',  'key': 'cloudq_bucket',          'type': str, 'mandatory': True},
-    {'section': 'agent',    'key': 'num_procs',              'type': int, 'mandatory': False,  'default': 8,    'min': 1},
-    {'section': 'agent',    'key': 'daemon_interval',        'type': int, 'mandatory': False,  'default': 5,    'min': 1},
-    {'section': 'agent',    'key': 'cloudq_directory',       'type': str, 'mandatory': False,  'default': '~/.cloudq'},
+    {'section': 'default',  'key': 'name',
+     'type': str, 'mandatory': True},
+    {'section': 'default',  'key': 'aws_profile',
+     'type': str, 'mandatory': True},
+    {'section': 'default',  'key': 'cloudq_endpoint_url',
+     'type': str, 'mandatory': True},
+    {'section': 'default',  'key': 'cloudq_bucket',
+     'type': str, 'mandatory': True},
+    {'section': 'agent',    'key': 'type',
+     'type': str, 'mandatory': True},
+    {'section': 'agent',    'key': 'num_procs',
+     'type': int, 'mandatory': False,  'default': 8,    'min': 1},
+    {'section': 'agent',    'key': 'daemon_interval',
+     'type': int, 'mandatory': False,  'default': 5,    'min': 1},
+    {'section': 'agent',    'key': 'cloudq_directory',
+     'type': str, 'mandatory': False,  'default': '~/.cloudq'},
 ]
 '''Definition of mandatory configuration parameters.
 '''
@@ -82,12 +91,14 @@ class MESSAGES(Enum):
 
     # information
     META_JOB_CONVERTED = 'Meta job script'
-    SUBMIT_JOB = 'submit job: submit job({}) to local scheduler.'
+    JOB_RECEIVED = 'submit job: job ({}) received.'
     JOB_SUBMITTED = 'submit job: job({}) is submitted. local-jobid:{}'
     JOB_SUBMISSION_FAILED = 'submit job: Failed to submit job ({})'
     JOB_UPDATED = 'stat job: job({}) is updated. status:{}'
     JOB_FINISHED = 'stat job: job ({}) is finished'
     JOB_ERROR_OCCURRED = 'stat job: Error occurred to job ({})'
+    JOB_TIMEDOUT = 'stat job: job ({}) timed out'
+    JOB_DELETED = 'stat job: job ({}) deleted'
     JOB_CANCELED = 'cancel job: job({}) is canceled.'
     JOB_FORCIBLY_CANCELED = 'cancel job: job({}) is forcibly canceled.'
 
@@ -119,8 +130,12 @@ meta_job_converter = None
 '''The object of meta job script converter accessor.
 '''
 
+process_pool = None
+'''The object of process pool.
+'''
 
-def submit_job(bucket, id_, manifest):
+
+def submit_job(bucket: object, id_: str, manifest: dict) -> bool:
     '''It submits a job to the local scheduler.
 
     Args:
@@ -147,7 +162,8 @@ def submit_job(bucket, id_, manifest):
                 hold_manifest = get_manifest(bucket, hold_jid.strip())
                 if hold_manifest:
                     if not is_finished_job(hold_manifest):
-                        logger.debug('submit_job ended. id:{}  (Hold jod({}) is not finished.)'.format(id_, hold_jid))
+                        logstr = 'submit_job ended. id:{}  (Hold jod({}) is not finished.)'
+                        logger.debug(logstr.format(id_, hold_jid))
                         return False
             logger.debug('hold jods are finished.')
 
@@ -160,11 +176,12 @@ def submit_job(bucket, id_, manifest):
         manifest[MANIFEST_PARAMS.LOCAL_ACCOUNT.value] = out.decode().strip()
 
         name = manifest[MANIFEST_PARAMS.NAME.value]
-        logger.info(MESSAGES.SUBMIT_JOB.value.format(id_))
+        logger.debug(MESSAGES.JOB_RECEIVED.value.format(id_))
 
         workdir = os.path.join(cache_dir, id_)
         os.makedirs(workdir, exist_ok=True)
         os.chdir(workdir)
+        manifest[MANIFEST_PARAMS.WORK_DIR.value] = workdir
 
         s3file = os.path.join(id_, name)
         if not is_exist_bucket_object(bucket, s3file):
@@ -175,9 +192,15 @@ def submit_job(bucket, id_, manifest):
         if not manifest[MANIFEST_PARAMS.SCRIPT_TYPE.value] == SCRIPT_TYPES.LOCAL.value:
             bucket.download_file(os.path.join(id_, PROJECT_DEF_FILE), PROJECT_DEF_FILE)
             bucket.download_file(os.path.join(id_, RESOURCE_DEF_FILE), RESOURCE_DEF_FILE)
-            manifest = meta_job_converter.to_local_job_script(manifest,
-                                                              config['default']['cloudq_endpoint_url'],
-                                                              config['default']['aws_profile'])
+            result = meta_job_converter.to_local_job_script(
+                manifest, config['default']['cloudq_endpoint_url'],
+                config['default']['aws_profile'])
+            if result:
+                manifest = result
+            else:
+                remove_work_dir(manifest)
+                logger.debug('submit_job ended. id:{}  (Other system\'s job.)'.format(id_))
+                return False
             local_script = manifest[MANIFEST_PARAMS.LOCAL_NAME.value]
             s3file = os.path.join(id_, local_script)
             bucket.upload_file(local_script, s3file)
@@ -186,16 +209,17 @@ def submit_job(bucket, id_, manifest):
         manifest = job_manager.submit_job(manifest)
     except Exception as e:
         manifest[MANIFEST_PARAMS.ERROR_MSG.value] = str(e)
+        logger.error('Error({}): {}\n\n'.format(id_, e))
+        logger.debug(traceback.format_exc())
 
     if manifest[MANIFEST_PARAMS.JOB_ID.value]:
-        logger.info(MESSAGES.JOB_SUBMITTED.value.format(id_, manifest[MANIFEST_PARAMS.JOB_ID.value]))
+        logger.info(MESSAGES.JOB_SUBMITTED.value.format(
+            id_, manifest[MANIFEST_PARAMS.JOB_ID.value]))
         manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.READY.value
-        manifest[MANIFEST_PARAMS.WORK_DIR.value] = workdir
         manifest[MANIFEST_PARAMS.TIME_READY.value] = current_time()
     else:
         logger.info(MESSAGES.JOB_SUBMISSION_FAILED.value.format(id_))
         manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.ERROR.value
-        manifest[MANIFEST_PARAMS.WORK_DIR.value] = workdir
         manifest[MANIFEST_PARAMS.TIME_FINISH.value] = current_time()
         remove_work_dir(manifest)
 
@@ -204,7 +228,7 @@ def submit_job(bucket, id_, manifest):
     return True
 
 
-def upload_logs(bucket, manifest):
+def upload_logs(bucket: object, manifest: dict) -> None:
     '''It uploads standard output and error of a job to an object storage.
 
     Args:
@@ -227,7 +251,7 @@ def upload_logs(bucket, manifest):
         logger.debug('log uploaded. file:{}'.format(s3file))
 
 
-def stageout_file(bucket, manifest):
+def stageout_file(bucket: object, manifest: dict) -> None:
     '''It uploads job outputs to an object storage.
 
     Args:
@@ -251,7 +275,7 @@ def stageout_file(bucket, manifest):
     os.remove(zipfile)
 
 
-def stat_job(bucket, id_, manifest):
+def stat_job(bucket: object, id_: str, manifest: dict) -> None:
     '''It queries status of a job.
 
     Args:
@@ -268,19 +292,37 @@ def stat_job(bucket, id_, manifest):
         if j[0] != manifest[MANIFEST_PARAMS.JOB_ID.value]:
             continue
 
-        if j[1] == JOB_STATE.RUN.value and manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.RUN.value:
+        if (j[1] == JOB_STATE.RUN.value and
+                manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.RUN.value):
             manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.RUN.value
             manifest[MANIFEST_PARAMS.TIME_START.value] = current_time()
             updated = True
-        elif j[1] == JOB_STATE.READY.value and manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.READY.value:
+        elif (j[1] == JOB_STATE.READY.value and
+              manifest[MANIFEST_PARAMS.STATE.value] == JOB_STATE.INIT.value):
             manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.READY.value
             manifest[MANIFEST_PARAMS.TIME_READY.value] = current_time()
             updated = True
-        elif j[1] == JOB_STATE.DELETING.value and manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.DELETING.value:
+        elif (j[1] == JOB_STATE.DELETING.value and
+              manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.DELETING.value):
             manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.DELETING.value
             updated = True
-        elif j[1] == JOB_STATE.ERROR.value and manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.ERROR.value:
+        elif (j[1] == JOB_STATE.COMPLETING.value and
+              manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.COMPLETING.value):
+            manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.COMPLETING.value
+            updated = True
+        elif (j[1] == JOB_STATE.ERROR.value and
+              manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.ERROR.value):
             manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.ERROR.value
+            manifest[MANIFEST_PARAMS.TIME_FINISH.value] = current_time()
+            updated = True
+        elif (j[1] == JOB_STATE.DELETED.value and
+              manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.DELETED.value):
+            manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.DELETED.value
+            manifest[MANIFEST_PARAMS.TIME_FINISH.value] = current_time()
+            updated = True
+        elif (j[1] == JOB_STATE.TIMEOUT.value and
+              manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.TIMEOUT.value):
+            manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.TIMEOUT.value
             manifest[MANIFEST_PARAMS.TIME_FINISH.value] = current_time()
             updated = True
 
@@ -288,9 +330,15 @@ def stat_job(bucket, id_, manifest):
             logger.info(MESSAGES.JOB_UPDATED.value.format(id_, j[1]))
             put_manifest(bucket, id_, manifest)
             upload_logs(bucket, manifest)
-            if manifest[MANIFEST_PARAMS.STATE.value] == JOB_STATE.ERROR.value:
+            if (manifest[MANIFEST_PARAMS.STATE.value] in
+                    (JOB_STATE.ERROR.value, JOB_STATE.DELETED.value, JOB_STATE.TIMEOUT.value)):
                 remove_work_dir(manifest)
-                logger.info(MESSAGES.JOB_ERROR_OCCURRED.value.format(id_))
+                if manifest[MANIFEST_PARAMS.STATE.value] == JOB_STATE.ERROR.value:
+                    logger.info(MESSAGES.JOB_ERROR_OCCURRED.value.format(id_))
+                if manifest[MANIFEST_PARAMS.STATE.value] == JOB_STATE.DELETED.value:
+                    logger.info(MESSAGES.JOB_DELETED.value.format(id_))
+                if manifest[MANIFEST_PARAMS.STATE.value] == JOB_STATE.TIMEOUT.value:
+                    logger.info(MESSAGES.JOB_TIMEDOUT.value.format(id_))
         elif manifest[MANIFEST_PARAMS.STATE.value] == JOB_STATE.RUN.value:
             upload_logs(bucket, manifest)
 
@@ -298,7 +346,9 @@ def stat_job(bucket, id_, manifest):
         return
 
     # job is already finished.
-    if manifest[MANIFEST_PARAMS.STATE.value] in (JOB_STATE.RUN.value, JOB_STATE.READY.value, JOB_STATE.DELETING.value):
+    if (manifest[MANIFEST_PARAMS.STATE.value] in
+            (JOB_STATE.RUN.value, JOB_STATE.READY.value, JOB_STATE.DELETING.value,
+             JOB_STATE.COMPLETING.value)):
         manifest[MANIFEST_PARAMS.TIME_SO_START.value] = current_time()
         stageout_file(bucket, manifest)
         manifest[MANIFEST_PARAMS.TIME_SO_FINISH.value] = current_time()
@@ -314,7 +364,7 @@ def stat_job(bucket, id_, manifest):
     logger.debug('stat_job ended. id:{}'.format(id_))
 
 
-def cancel_job(bucket, id_, manifest):
+def cancel_job(bucket: object, id_: str, manifest: dict) -> None:
     '''It cancels a job.
 
     Args:
@@ -325,7 +375,7 @@ def cancel_job(bucket, id_, manifest):
     logger.debug('cancel_job start. id:{}'.format(id_))
 
     if manifest[MANIFEST_PARAMS.STATE.value] == JOB_STATE.INIT.value:
-        manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.DONE.value
+        manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.DELETED.value
         manifest[MANIFEST_PARAMS.TIME_FINISH.value] = current_time()
         put_manifest(bucket, id_, manifest)
         remove_work_dir(manifest)
@@ -352,7 +402,8 @@ def cancel_job(bucket, id_, manifest):
         cancel_file_str = f.read()
 
     if len(cancel_file_str) > 0:
-        if datetime.datetime.now() >= iso_to_datetime(cancel_file_str) + datetime.timedelta(seconds=60):
+        if (datetime.datetime.now() >=
+                iso_to_datetime(cancel_file_str) + datetime.timedelta(seconds=60)):
             logger.debug('cancel job (force): id:{}'.format(id_))
             manifest = job_manager.cancel_job(manifest, True)
             manifest[MANIFEST_PARAMS.STATE.value] = JOB_STATE.DONE.value
@@ -379,23 +430,27 @@ def cancel_job(bucket, id_, manifest):
     logger.debug('cancel_job ended. id:{}'.format(id_))
 
 
-def remove_work_dir(manifest):
+def remove_work_dir(manifest: dict) -> None:
+    '''It removes a work directory.
+
+    Args:
+        manifest dict[str: obj]: A job manifest.
+    '''
     work_dir = manifest[MANIFEST_PARAMS.WORK_DIR.value]
     if os.path.isdir(work_dir):
         logger.debug('The working directory is removed:{}'.format(work_dir))
         shutil.rmtree(work_dir)
 
 
-def checknrun():
+def checknrun() -> None:
     '''It process jobs in an object storage.
     '''
     logger.debug('checknrun start.')
     endpoint_url = config['default']['cloudq_endpoint_url']
     root_bucket = config['default']['cloudq_bucket']
     aws_profile = config['default']['aws_profile']
-    num_procs = int(config['agent']['num_procs'])
 
-    def _process_job(jid):
+    def _process_job(jid: str) -> None:
         try:
             os.chdir(root_dir)
 
@@ -414,7 +469,8 @@ def checknrun():
                 logger.debug('[{}] already finished.'.format(jid))
                 return
             logger.debug('[{}] process start.'.format(jid))
-            if is_exist_bucket_object(_bucket, os.path.join(jid, CANCEL_FILE)):
+            if (is_exist_bucket_object(_bucket, os.path.join(jid, CANCEL_FILE)) and
+                    manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.COMPLETING.value):
                 cancel_job(_bucket, jid, manifest)
             elif manifest[MANIFEST_PARAMS.STATE.value] == JOB_STATE.INIT.value:
                 if not submit_job(_bucket, jid, manifest):
@@ -436,22 +492,32 @@ def checknrun():
             return
         jids = [obj.get('Prefix')[:-1] for obj in objs.get('CommonPrefixes')]
         logger.debug('jids = {}'.format(jids))
-        pool = ProcessingPool(nodes=num_procs)
-        lst_jobs = pool.map(lambda jid: _process_job(jid), jids)
+        process_pool.map(lambda jid: _process_job(jid), jids)
     except Exception:
         logger.error(sys.exc_info())
         logger.debug(traceback.format_exc())
     logger.debug('checknrun ended.')
 
 
-def upload_agent_log(config, bucket):
+def upload_agent_log(config: configparser.ConfigParser, bucket: object) -> None:
+    '''It uploads a agent logs to cloud storage.
+
+    Args:
+        config (configparser.ConfigParser): CloudQ CLI configuration.
+        bucket (S3.Bucket): A bucket where the job is stored.
+    '''
     logfile = os.path.join(root_dir, LOG_FILE)
     s3file = os.path.join(AGENT_LOG_PREFIX, config['default']['name'])
     if os.path.isfile(logfile):
         bucket.upload_file(logfile, s3file)
 
 
-def _check_config(config):
+def _check_config(config: configparser.ConfigParser) -> None:
+    '''It checks configuration parameters.
+
+    Args:
+        config (configparser.ConfigParser): CloudQ CLI configuration.
+    '''
     for param in CONFIG_PARAMS:
         # check existance of section
         if not param['section'] in config.sections():
@@ -463,18 +529,21 @@ def _check_config(config):
                 # string parameter
                 value = config.get(param['section'], param['key'])
                 if param['mandatory'] and 0 >= len(value):
-                    raise Exception(MESSAGES.INVALID_CONFIG_PARAM.value.format(param['section'], param['key'], '(empty)'))
+                    raise Exception(MESSAGES.INVALID_CONFIG_PARAM.value.format(
+                        param['section'], param['key'], '(empty)'))
 
             elif param['type'] is int:
                 # integer parameter
                 value = config.getint(param['section'], param['key'])
                 if param['min'] > value:
-                    raise Exception(MESSAGES.INVALID_CONFIG_PARAM.value.format(param['section'], param['key'], value))
+                    raise Exception(MESSAGES.INVALID_CONFIG_PARAM.value.format(
+                        param['section'], param['key'], value))
 
         except configparser.NoOptionError:
             if param['mandatory']:
                 # if this parameter is mandatory, raise exception.
-                raise Exception(MESSAGES.CONFIG_PARAM_NOT_SPECIFIED.value.format(param['section'], param['key']))
+                raise Exception(MESSAGES.CONFIG_PARAM_NOT_SPECIFIED.value.format(
+                    param['section'], param['key']))
             else:
                 # if this parameter is optional, set detault value.
                 config[param['section']][param['key']] = str(param['default'])
@@ -490,7 +559,9 @@ def _check_config(config):
         raise Exception(MESSAGES.INVALID_CACHE_DIR_PATH.value.format(cache_dir))
 
 
-def init_logger():
+def init_logger() -> None:
+    '''It setups logger object.
+    '''
     logfile = os.path.join(root_dir, LOG_FILE)
     if os.path.isfile(logfile):
         os.remove(logfile)
@@ -507,7 +578,9 @@ def init_logger():
     logger.setLevel(logging.INFO)
 
 
-def main():
+def main() -> None:
+    '''the entry point.
+    '''
     global logger
     try:
         data_dir = os.path.join(os.path.dirname(__file__), 'data')
@@ -527,10 +600,14 @@ def main():
         args = parser.parse_args()
 
         global job_manager
-        job_manager = JobManagerAccessor(config['default']['name'])
+        job_manager = JobManagerAccessor(config['agent']['type'])
 
         global meta_job_converter
-        meta_job_converter = MetaJobScriptConverterAccessor(config['default']['name'])
+        meta_job_converter = MetaJobScriptConverterAccessor(config['agent']['type'])
+        meta_job_converter.set_unique_name(config['default']['name'])
+
+        global process_pool
+        process_pool = ProcessingPool(nodes=int(config['agent']['num_procs']))
 
         if not args.daemon:
             checknrun()

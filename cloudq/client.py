@@ -1,6 +1,6 @@
 # client: cloudq client command line tool
 #
-# Copyright 2021
+# Copyright 2022
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -30,8 +30,11 @@ import boto3
 import botocore
 from pathos.multiprocessing import ProcessingPool
 
-from .common import put_manifest, get_manifest, current_time, time_iso_to_readable, iso_to_datetime, is_finished_job, is_exist_bucket_object
-from .common import MANIFEST_FILE, PROJECT_DEF_FILE, RESOURCE_DEF_FILE, STDOUT_FILE, STDERR_FILE, CANCEL_FILE, AGENT_LOG_PREFIX, JOB_STATE, MANIFEST_PARAMS, SCRIPT_TYPES
+from .common import put_manifest, get_manifest, current_time, time_iso_to_readable
+from .common import iso_to_datetime, is_finished_job, is_exist_bucket_object, combine_s3_path
+from .common import MANIFEST_FILE, PROJECT_DEF_FILE, RESOURCE_DEF_FILE, STDOUT_FILE
+from .common import STDERR_FILE, CANCEL_FILE, AGENT_LOG_PREFIX
+from .common import JOB_STATE, MANIFEST_PARAMS, SCRIPT_TYPES
 
 PROCESS_NAME = 'CloudQ Client'
 '''Name of this process.
@@ -53,12 +56,18 @@ CONFIG_FILE_ENCODING = 'utf-8'
 '''
 
 CONFIG_PARAMS = [
-    {'section': 'default',  'key': 'name',                   'type': str, 'mandatory': True},
-    {'section': 'default',  'key': 'aws_profile',            'type': str, 'mandatory': True},
-    {'section': 'default',  'key': 'cloudq_endpoint_url',    'type': str, 'mandatory': True},
-    {'section': 'default',  'key': 'cloudq_bucket',          'type': str, 'mandatory': True},
-    {'section': 'client',   'key': 'resource_profile',       'type': str, 'mandatory': False, 'default': ''},
-    {'section': 'client',   'key': 'project_profile',        'type': str, 'mandatory': False, 'default': ''},
+    {'section': 'default',  'key': 'name',
+     'type': str, 'mandatory': True},
+    {'section': 'default',  'key': 'aws_profile',
+     'type': str, 'mandatory': True},
+    {'section': 'default',  'key': 'cloudq_endpoint_url',
+     'type': str, 'mandatory': True},
+    {'section': 'default',  'key': 'cloudq_bucket',
+     'type': str, 'mandatory': True},
+    {'section': 'client',   'key': 'resource_profile',
+     'type': str, 'mandatory': False, 'default': ''},
+    {'section': 'client',   'key': 'project_profile',
+     'type': str, 'mandatory': False, 'default': ''},
 ]
 '''Definition of mandatory configuration parameters.
 '''
@@ -101,7 +110,9 @@ class MESSAGES(Enum):
     NO_CONFIG_FILE = 'The configuration file is not found: {}'
 
 
-def submit_job(config, args, bucket):
+def submit_job(config: configparser.ConfigParser,
+               args: argparse.Namespace,
+               bucket: object) -> None:
     '''It submits a job.
 
     Args:
@@ -121,17 +132,17 @@ def submit_job(config, args, bucket):
     files = {}
 
     if os.path.isfile(args.script):
-        files[args.script] = os.path.join(id_, name)
+        files[args.script] = combine_s3_path(id_, name)
     else:
         raise Exception(MESSAGES.SCRIPT_NOT_FOUND.value.format(args.script))
 
     if not args.submit_to:
         project_def = os.path.join(DATA_DIR, config['client']['project_profile'])
         if os.path.isfile(project_def):
-            files[project_def] = os.path.join(id_, PROJECT_DEF_FILE)
+            files[project_def] = combine_s3_path(id_, PROJECT_DEF_FILE)
         resource_def = os.path.join(DATA_DIR, config['client']['resource_profile'])
         if os.path.isfile(resource_def):
-            files[resource_def] = os.path.join(id_, RESOURCE_DEF_FILE)
+            files[resource_def] = combine_s3_path(id_, RESOURCE_DEF_FILE)
 
     # Create job manifest
     manifest = json.load(open(os.path.join(DATA_DIR, MANIFEST_TEMPLATE)))
@@ -164,11 +175,14 @@ def submit_job(config, args, bucket):
 
     # The manifest upload at last.
     put_manifest(bucket, id_, manifest)
-    logger.info(MESSAGES.SUBMIT_COMPLETED.value.format(manifest[MANIFEST_PARAMS.UUID.value], manifest[MANIFEST_PARAMS.NAME.value]))
+    logger.info(MESSAGES.SUBMIT_COMPLETED.value.format(
+        manifest[MANIFEST_PARAMS.UUID.value], manifest[MANIFEST_PARAMS.NAME.value]))
     logger.debug('submit_job ended.')
 
 
-def stat_job(config, args, bucket):
+def stat_job(config: configparser.ConfigParser,
+             args: argparse.Namespace,
+             bucket: object) -> None:
     '''It queries status of a job.
 
     Args:
@@ -180,8 +194,9 @@ def stat_job(config, args, bucket):
     logger.debug('stat_job start.')
     if not args.id:
         raise Exception(MESSAGES.JOB_ID_NOT_SPECIFIED.value)
-    s3file = os.path.join(args.id, MANIFEST_FILE)
+    s3file = combine_s3_path(args.id, MANIFEST_FILE)
     fd, tmpfile = tempfile.mkstemp()
+    os.close(fd)
     try:
         bucket.download_file(s3file, tmpfile)
     except botocore.exceptions.ClientError:
@@ -199,7 +214,9 @@ def stat_job(config, args, bucket):
     logger.debug('stat_job ended.')
 
 
-def show_job_log(config, args, bucket):
+def show_job_log(config: configparser.ConfigParser,
+                 args: argparse.Namespace,
+                 bucket: object) -> None:
     '''It shows standard output of a job on console.
 
     Args:
@@ -224,11 +241,11 @@ def show_job_log(config, args, bucket):
             filename = STDOUT_FILE
 
         if args.tid:
-            s3files[''] = os.path.join(args.id, '{}.{}'.format(filename, args.tid))
+            s3files[''] = combine_s3_path(args.id, '{}.{}'.format(filename, args.tid))
             if not is_exist_bucket_object(bucket, s3files['']):
                 raise Exception(MESSAGES.TASK_NOT_FOUND.value.format(args.tid))
         else:
-            objects = bucket.objects.filter(Prefix=os.path.join(args.id, filename))
+            objects = bucket.objects.filter(Prefix=combine_s3_path(args.id, filename))
             for object in objects:
                 pos = object.key.find('.')
                 if pos >= 0:
@@ -238,13 +255,14 @@ def show_job_log(config, args, bucket):
                 s3files[tid] = object.key
 
     elif args.agent:
-        s3files[''] = os.path.join(AGENT_LOG_PREFIX, args.agent)
+        s3files[''] = combine_s3_path(AGENT_LOG_PREFIX, args.agent)
         if not is_exist_bucket_object(bucket, s3files['']):
             raise Exception(MESSAGES.LOG_NOT_FOUND.value.format(args.agent))
 
     for key, val in s3files.items():
         if is_exist_bucket_object(bucket, val):
             fd, tmpfile = tempfile.mkstemp()
+            os.close(fd)
             try:
                 bucket.download_file(val, tmpfile)
             except botocore.exceptions.ClientError:
@@ -258,7 +276,9 @@ def show_job_log(config, args, bucket):
     logger.debug('show_job_log ended.')
 
 
-def cancel_job(config, args, bucket):
+def cancel_job(config: configparser.ConfigParser,
+               args: argparse.Namespace,
+               bucket: object) -> None:
     '''It cancels a waiting/running job.
 
     It cancels a job if the job is not completed.
@@ -277,10 +297,12 @@ def cancel_job(config, args, bucket):
     if manifest is None:
         raise Exception(MESSAGES.JOB_DATA_NOT_FOUND.value.format(id_))
 
-    if not is_finished_job(manifest):
-        s3file = os.path.join(id_, CANCEL_FILE)
+    if (not is_finished_job(manifest) and
+            manifest[MANIFEST_PARAMS.STATE.value] != JOB_STATE.COMPLETING.value):
+        s3file = combine_s3_path(id_, CANCEL_FILE)
         if not is_exist_bucket_object(bucket, s3file):
             fd, tmpfile = tempfile.mkstemp()
+            os.close(fd)
             with open(tmpfile, 'w') as fp:
                 fp.write('')
 
@@ -292,7 +314,9 @@ def cancel_job(config, args, bucket):
     logger.debug('cancel_job ended.')
 
 
-def del_job(config, args, bucket):
+def del_job(config: configparser.ConfigParser,
+            args: argparse.Namespace,
+            bucket: object) -> None:
     '''It deletes a completed job from CloudQ.
 
     It deletes a job if the job is in completed.
@@ -316,7 +340,7 @@ def del_job(config, args, bucket):
         else:
             raise Exception(MESSAGES.JOB_IS_NOT_COMPLETED.value.format(id_))
     elif args.agent:
-        s3file = os.path.join(AGENT_LOG_PREFIX, args.agent)
+        s3file = combine_s3_path(AGENT_LOG_PREFIX, args.agent)
         if not is_exist_bucket_object(bucket, s3file):
             raise Exception(MESSAGES.LOG_NOT_FOUND.value.format(args.agent))
         bucket.objects.filter(Prefix=s3file).delete()
@@ -331,8 +355,8 @@ def del_job(config, args, bucket):
     logger.debug('del_job ended.')
 
 
-def _get_jobs(config, bucket):
-    def _task_assign(jids, n_workers):
+def _get_jobs(config: configparser.ConfigParser, bucket: object) -> list:
+    def _task_assign(jids: list, n_workers: int) -> list:
         '''Returns:
             list[list[str]]: List of job ID.
         '''
@@ -343,10 +367,10 @@ def _get_jobs(config, bucket):
             idx = (idx + 1) % n_workers
         return [x for x in lst_jids if x]
 
-    def _list_manifests(jids):
+    def _list_manifests(jids: list) -> list:
         return [_job_manifest(jid) for jid in jids if not jid == AGENT_LOG_PREFIX]
 
-    def _job_manifest(jid):
+    def _job_manifest(jid: str) -> (bool, dict):
         '''Returns:
             (bool: dict[str, obj]): bool is True if the job ID is valid.
                 dict[str, obj] is the manifest of the job.
@@ -357,7 +381,7 @@ def _get_jobs(config, bucket):
             return False, {MANIFEST_PARAMS.UUID.value: jid}
         return True, manifest
 
-    def _flat_jobs(lst_jobs):
+    def _flat_jobs(lst_jobs: list) -> list:
         flat_jobs = []
         for jobs in lst_jobs:
             for job in jobs:
@@ -381,7 +405,9 @@ def _get_jobs(config, bucket):
     return _flat_jobs(lst_jobs)
 
 
-def list_jobs(config, args, bucket):
+def list_jobs(config: configparser.ConfigParser,
+              args: argparse.Namespace,
+              bucket: object) -> None:
     '''It shows waiting/running jobs in CloudQ.
 
     Args:
@@ -394,7 +420,7 @@ def list_jobs(config, args, bucket):
     jobs = _get_jobs(config, bucket)
 
     # output valid jobs
-    output_format = '{:>12s}  {:>20s}  {:>8s}  {:>10s}  {:>19s}'
+    output_format = '{:>12s}  {:>20s}  {:>10s}  {:>10s}  {:>23s}'
     colmuns = ['job-ID', 'name', 'state', 'run-system', 'submit at']
     header = output_format.format(*colmuns)
     logger.info(header)
@@ -402,11 +428,12 @@ def list_jobs(config, args, bucket):
     jobs_valid = [job[1] for job in jobs if job[0] and not is_finished_job(job[1])]
     jobs_valid.sort(key=lambda x: iso_to_datetime(x[MANIFEST_PARAMS.TIME_SUBMIT.value]))
     for job in jobs_valid:
-        logger.info(output_format.format(job[MANIFEST_PARAMS.UUID.value][:12],
-                                         job[MANIFEST_PARAMS.NAME.value][:20],
-                                         job[MANIFEST_PARAMS.STATE.value],
-                                         job[MANIFEST_PARAMS.RUN_SYSTEM.value][:10],
-                                         time_iso_to_readable(job[MANIFEST_PARAMS.TIME_SUBMIT.value])))
+        logger.info(output_format.format(
+            job[MANIFEST_PARAMS.UUID.value][:12],
+            job[MANIFEST_PARAMS.NAME.value][:20],
+            job[MANIFEST_PARAMS.STATE.value],
+            job[MANIFEST_PARAMS.RUN_SYSTEM.value][:10],
+            time_iso_to_readable(job[MANIFEST_PARAMS.TIME_SUBMIT.value])))
 
     # output invalid jobs
     jobs_invalid = [job[1] for job in jobs if not job[0]]
@@ -417,7 +444,9 @@ def list_jobs(config, args, bucket):
     logger.debug('list_jobs ended.')
 
 
-def history_jobs(config, args, bucket):
+def history_jobs(config: configparser.ConfigParser,
+                 args: argparse.Namespace,
+                 bucket: object) -> None:
     '''It shows completed jobs in CloudQ.
 
     Args:
@@ -430,7 +459,7 @@ def history_jobs(config, args, bucket):
     jobs = _get_jobs(config, bucket)
 
     # output valid jobs
-    output_format = '{:>12s}  {:>20s}  {:>8s}  {:>10s}  {:>19s}  {:>19s}  {:>19s}'
+    output_format = '{:>12s}  {:>20s}  {:>10s}  {:>10s}  {:>23s}  {:>23s}  {:>23s}'
     colmuns = ['job-ID', 'name', 'state', 'run-system', 'submit at', 'start at', 'finish at']
     header = output_format.format(*colmuns)
     logger.info(header)
@@ -438,13 +467,14 @@ def history_jobs(config, args, bucket):
     jobs_valid = [job[1] for job in jobs if job[0] and is_finished_job(job[1])]
     jobs_valid.sort(key=lambda x: iso_to_datetime(x[MANIFEST_PARAMS.TIME_SUBMIT.value]))
     for job in jobs_valid:
-        logger.info(output_format.format(job[MANIFEST_PARAMS.UUID.value][:12],
-                                         job[MANIFEST_PARAMS.NAME.value][:20],
-                                         job[MANIFEST_PARAMS.STATE.value],
-                                         job[MANIFEST_PARAMS.RUN_SYSTEM.value][:10],
-                                         time_iso_to_readable(job[MANIFEST_PARAMS.TIME_SUBMIT.value]),
-                                         time_iso_to_readable(job[MANIFEST_PARAMS.TIME_START.value]),
-                                         time_iso_to_readable(job[MANIFEST_PARAMS.TIME_FINISH.value])))
+        logger.info(output_format.format(
+            job[MANIFEST_PARAMS.UUID.value][:12],
+            job[MANIFEST_PARAMS.NAME.value][:20],
+            job[MANIFEST_PARAMS.STATE.value],
+            job[MANIFEST_PARAMS.RUN_SYSTEM.value][:10],
+            time_iso_to_readable(job[MANIFEST_PARAMS.TIME_SUBMIT.value]),
+            time_iso_to_readable(job[MANIFEST_PARAMS.TIME_START.value]),
+            time_iso_to_readable(job[MANIFEST_PARAMS.TIME_FINISH.value])))
 
     # output invalid jobs
     jobs_invalid = [job[1] for job in jobs if not job[0]]
@@ -455,7 +485,9 @@ def history_jobs(config, args, bucket):
     logger.debug('history_jobs ended.')
 
 
-def stageout(config, args, bucket):
+def stageout(config: configparser.ConfigParser,
+             args: argparse.Namespace,
+             bucket: object) -> None:
     '''It downloads specified job's objects.
 
     Args:
@@ -481,7 +513,14 @@ def stageout(config, args, bucket):
     logger.debug('stageout ended.')
 
 
-def _get_bucket(config):
+def _get_bucket(config: configparser.ConfigParser) -> object:
+    '''It returns a bucket of cloud object storage.
+
+    Args:
+        config (configparser.ConfigParser): CloudQ CLI configuration.
+    Returns:
+        (S3.bucket): the bucket of cloud object storage
+    '''
     endpoint_url = config['default']['cloudq_endpoint_url']
     aws_profile = config['default']['aws_profile']
     root_bucket = config['default']['cloudq_bucket']
@@ -491,7 +530,12 @@ def _get_bucket(config):
     return s3.Bucket(root_bucket)
 
 
-def _check_config(config):
+def _check_config(config: configparser.ConfigParser) -> None:
+    '''It checks configuration parameters.
+
+    Args:
+        config (configparser.ConfigParser): CloudQ CLI configuration.
+    '''
     for param in CONFIG_PARAMS:
         # check existance of section
         if not param['section'] in config.sections():
@@ -503,24 +547,32 @@ def _check_config(config):
                 # string parameter
                 value = config.get(param['section'], param['key'])
                 if param['mandatory'] and 0 >= len(value):
-                    raise Exception(MESSAGES.INVALID_CONFIG_PARAM.value.format(param['section'], param['key'], '(empty)'))
+                    raise Exception(MESSAGES.INVALID_CONFIG_PARAM.value.format(
+                        param['section'], param['key'], '(empty)'))
 
             elif param['type'] is int:
                 # integer parameter
                 value = config.getint(param['section'], param['key'])
                 if param['min'] > value:
-                    raise Exception(MESSAGES.INVALID_CONFIG_PARAM.value.format(param['section'], param['key'], value))
+                    raise Exception(MESSAGES.INVALID_CONFIG_PARAM.value.format(
+                        param['section'], param['key'], value))
 
         except configparser.NoOptionError:
             if param['mandatory']:
                 # if this parameter is mandatory, raise exception.
-                raise Exception(MESSAGES.CONFIG_PARAM_NOT_SPECIFIED.value.format(param['section'], param['key']))
+                raise Exception(MESSAGES.CONFIG_PARAM_NOT_SPECIFIED.value.format(
+                    param['section'], param['key']))
             else:
                 # if this parameter is optional, set detault value.
                 config[param['section']][param['key']] = param['default']
 
 
-def _construct_argparser():
+def _construct_argparser() -> argparse.ArgumentParser:
+    '''It returns arguemnt parser.
+
+    Returns:
+        (argparse.ArgumentParser): the argument parser of CloudQ client.
+    '''
     parser = argparse.ArgumentParser(description='CloudQ command line tool', add_help=True)
     subparsers = parser.add_subparsers(dest='subcommand')
     subparsers.required = True
@@ -561,13 +613,15 @@ def _construct_argparser():
 
     # cancel
     help_message_cancel = 'Cancel a job'
-    parser_cancel = subparsers.add_parser('cancel', help=help_message_cancel, description=help_message_cancel)
+    parser_cancel = subparsers.add_parser(
+        'cancel', help=help_message_cancel, description=help_message_cancel)
     parser_cancel.add_argument('--id', help='job id')
     parser_cancel.set_defaults(func=cancel_job)
 
     # delete
     help_message_del = 'Delete a job'
-    parser_del = subparsers.add_parser('delete', help=help_message_del, description=help_message_del)
+    parser_del = subparsers.add_parser(
+        'delete', help=help_message_del, description=help_message_del)
     ex_group_del = parser_del.add_mutually_exclusive_group(required=True)
     ex_group_del.add_argument('--id', help='job id')
     ex_group_del.add_argument('--agent', help='agent name')
@@ -596,7 +650,9 @@ def _construct_argparser():
     return parser
 
 
-def init_logger():
+def init_logger() -> None:
+    '''It setups logger object.
+    '''
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(logging.Formatter(LOG_STDOUT_FORMAT))
     handlers = [stdout_handler]
@@ -610,10 +666,12 @@ def init_logger():
 
     global logger
     logger = logging.getLogger(PROCESS_NAME)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
 
 
-def main():
+def main() -> None:
+    '''the entry point.
+    '''
     init_logger()
 
     try:

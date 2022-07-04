@@ -7,7 +7,7 @@
 #$ container_img: docker://nvcr.io/nvidia/pytorch:20.12-py3
 #
 #======================================================================================
-# Copyright 2021
+# Copyright 2022
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #

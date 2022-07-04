@@ -1,16 +1,16 @@
-# Development Notes of Cloudq Agent
+# Development Notes of CloudQ Agent
 
-Copyright 2021 National Institute of Advanced Industrial Science and Technology (AIST), Japan and
+Copyright 2022 National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 Hitachi, Ltd.
 
 
-# Arhitecture of Cloudq
-Cloudq consists of **Client** and **Agent**.
+# Architecture of CloudQ
+CloudQ consists of **Client** and **Agent**.
 Client runs on the user terminal and Agent runs on the front-end node of its target system.
 Client and Agent exchange job input and output through cloud storage.
 
-## Role of Cloudq Client
-Cloudq Client downloads and uploads data to the cloud storage upon receiving commands from the user.
+## Role of CloudQ Client
+CloudQ Client downloads and uploads data to the cloud storage upon receiving commands from the user.
 
 It provides following functions:
 - Submit and cancel jobs.
@@ -18,18 +18,18 @@ It provides following functions:
 - Download job execution results.
 - Delete job data on the cloud storage.
 
-## Role of Cloudq Agent
-Cloudq Agent retrieves job data stored in a cloud storage and executes jobs in the local scheduler of the system.
+## Role of CloudQ Agent
+CloudQ Agent retrieves job data stored in a cloud storage and executes jobs in the local scheduler of the system.
 
 It provides following functions:
-- Receive jobs submitted by Cloudq Client.
+- Receive jobs submitted by CloudQ Client.
 - If the received job is a meta jobscript, convert it to a local jobscript.
 - Submit the job to the local scheduler of the system.
 - Check the status of the job submitted to the local scheduler and upload it to the cloud storage.
 
 
-# How to Delvelop Cloudq Agent for a Specific System
-In order to develop Cloudq Agent for a specific system, the developer needs to do the following:
+# How to Delvelop CloudQ Agent for a Specific System
+In order to develop CloudQ Agent for a specific system, the developer needs to do the following:
 1. Create a system-specific implementation class that inherits from the provided job management IF.
 2. Create a system-specific implementation class that inherits from the provided meta jobscript conversion IF.
 3. Register the implemented class by referring to [How to Add Support for a Specific System](#how-to-add-support-for-a-specific-system).
@@ -37,8 +37,8 @@ In order to develop Cloudq Agent for a specific system, the developer needs to d
 
 # Job Management IF
 ## Feature
-This interface is provided for easy development of Cloudq job manager for a specific system.
-A class that inherits this interface and properly implement abstract methods manages jobs under Cloudq job management rules.
+This interface is provided for easy development of CloudQ job manager for a specific system.
+A class that inherits this interface and properly implement abstract methods manages jobs under CloudQ job management rules.
 
 ## Abstract Class Name
 AbstractJobManager
@@ -123,8 +123,8 @@ When an error occurs, the manifest with the error message must be returned.
 
 # Meta Jobscript Conversion IF
 ## Feature
-This interface is provided for easy development of Cloudq meta jobscript converter for a specific system.
-A class that inherits this interface and properly implement abstract methods converts meta jobscripts under Cloudq rules.
+This interface is provided for easy development of CloudQ meta jobscript converter for a specific system.
+A class that inherits this interface and properly implement abstract methods converts meta jobscripts under CloudQ rules.
 
 ## Abstract Class Name
 AbstractMetaJobScriptConverter
@@ -163,7 +163,7 @@ The contents described in the manifest file are listed below:
 
 |  Name  |  Explanation  |
 | ---- | ---- |
-|  uuid  |  Job ID in Cloudq.  |
+|  uuid  |  Job ID in CloudQ.  |
 |  jobid  |  Job ID in the local scheduler.  |
 |  name  |  Script file name.  |
 |  jobscript_type  |  Type of jobscript.<br>`local` means local jobscript. `meta` means meta jobscript.  |

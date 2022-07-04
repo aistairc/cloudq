@@ -1,4 +1,4 @@
-# interface: cloudq agent interface
+# base: cloudq agent base
 #
 # Copyright 2022
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
@@ -15,59 +15,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from enum import Enum
-from .base import AbstractJobManager, AbstractMetaJobScriptConverter
-# Import of job manager interfaces
-from .abci import ABCIJobManager
-from .slurm import SlurmJobManager
-# Import of meta job script converter interfaces
-from .abci import ABCIMetaJobScriptConverter
-from .slurm import SlurmMetaJobScriptConverter
+from abc import ABCMeta, abstractmethod
 
 
-class MESSAGES(Enum):
-    ''' List of console messages.
-    '''
-    UNSUPPORTED_SYSTEM_NAME = 'The system name is not supported: {}'
-
-
-JOB_MANAGER_IMPL_LIST = [
-    ABCIJobManager,
-    SlurmJobManager
-]
-
-META_JOB_SCRIPT_CONVERTER_IMPL_LIST = [
-    ABCIMetaJobScriptConverter,
-    SlurmMetaJobScriptConverter
-]
-
-
-class JobManagerAccessor(AbstractJobManager):
-    '''The accessor of job management interface
+class AbstractJobManager(metaclass=ABCMeta):
+    '''The job management interface
     '''
 
     @property
+    @abstractmethod
     def SYSTEM_NAME(self) -> str:
         '''It returns system name
         '''
-        return ''
+        pass
 
-    def __init__(self, system: str) -> None:
-        '''Constructor
-
-        Args:
-            system (str) : the system name
-        '''
-        self.target = None
-        for name in JOB_MANAGER_IMPL_LIST:
-            obj = name()
-            if (system == obj.SYSTEM_NAME):
-                self.target = obj
-                break
-
-        if not self.target:
-            raise ValueError(MESSAGES.UNSUPPORTED_SYSTEM_NAME.value.format(system))
-
+    @abstractmethod
     def submit_job(self, manifest: dict) -> dict:
         '''It submit a job.
 
@@ -76,16 +38,18 @@ class JobManagerAccessor(AbstractJobManager):
         Returns:
             dict: a job manifest added local parameters.
         '''
-        return self.target.submit_job(manifest)
+        pass
 
+    @abstractmethod
     def get_jobs_status(self) -> dict:
         '''It returns job status list.
 
         Returns:
             list: job status list.
         '''
-        return self.target.get_jobs_status()
+        pass
 
+    @abstractmethod
     def cancel_job(self, manifest: dict, force: bool) -> dict:
         '''It cancels a job.
 
@@ -95,8 +59,9 @@ class JobManagerAccessor(AbstractJobManager):
         Returns:
             dict: a job manifest.
         '''
-        return self.target.cancel_job(manifest, force)
+        pass
 
+    @abstractmethod
     def get_job_log(self, manifest: dict, error: bool = False) -> dict:
         '''It saves a job log.
 
@@ -106,43 +71,30 @@ class JobManagerAccessor(AbstractJobManager):
         Returns:
             dict: a job manifest.
         '''
-        return self.target.get_job_log(manifest, error)
+        pass
 
 
-class MetaJobScriptConverterAccessor(AbstractMetaJobScriptConverter):
-    '''The accessor of meta job script conversion interface
+class AbstractMetaJobScriptConverter(metaclass=ABCMeta):
+    '''The meta job script conversion interface
     '''
 
     @property
+    @abstractmethod
     def SYSTEM_NAME(self) -> str:
         '''It returns system name
         '''
-        return ''
+        pass
 
-    def __init__(self, system: str) -> None:
-        '''Constructor
-
-        Args:
-            system (str) : the system name
-        '''
-        self.target = None
-        for name in META_JOB_SCRIPT_CONVERTER_IMPL_LIST:
-            obj = name()
-            if (system == obj.SYSTEM_NAME):
-                self.target = obj
-                break
-
-        if not self.target:
-            raise ValueError(MESSAGES.UNSUPPORTED_SYSTEM_NAME.value.format(system))
-
+    @abstractmethod
     def set_unique_name(self, name: str) -> None:
         '''It stores unique system name
 
         Args:
             name (dict): a unique system name.
         '''
-        self.target.set_unique_name(name)
+        pass
 
+    @abstractmethod
     def to_local_job_script(self, manifest: dict, endpoint_url: str, aws_profile: str) -> dict:
         '''It converts meta job script to local job script
 
@@ -153,4 +105,4 @@ class MetaJobScriptConverterAccessor(AbstractMetaJobScriptConverter):
         Returns:
             dict: a job manifest.
         '''
-        return self.target.to_local_job_script(manifest, endpoint_url, aws_profile)
+        pass

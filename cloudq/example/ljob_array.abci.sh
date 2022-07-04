@@ -4,7 +4,7 @@
 #$-l h_rt=01:00:00
 #
 #======================================================================================
-# Copyright 2021
+# Copyright 2022
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #

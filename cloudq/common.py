@@ -1,6 +1,6 @@
 # common: cloudq common library
 #
-# Copyright 2021
+# Copyright 2022
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -53,6 +53,10 @@ AGENT_LOG_PREFIX = 'agent'
 '''Name of agent log's prefix on an object storage.
 '''
 
+INITIAL_TIME = '-'
+'''The string of initial datetime in manifest file.
+'''
+
 
 class JOB_STATE(Enum):
     '''Name of job's state.
@@ -61,8 +65,11 @@ class JOB_STATE(Enum):
     READY = 'READY'
     RUN = 'RUN'
     DELETING = 'DELETING'
+    COMPLETING = 'COMPLETING'
     ERROR = 'ERROR'
     DONE = 'DONE'
+    TIMEOUT = 'TIMEOUT'
+    DELETED = 'DELETED'
 
 
 class MANIFEST_PARAMS(Enum):
@@ -102,7 +109,7 @@ class SCRIPT_TYPES(Enum):
     META = 'meta'
 
 
-def get_manifest(bucket, id_):
+def get_manifest(bucket: object, id_: str) -> dict:
     '''It gets a manifest of a job from an object storage.
 
     Args:
@@ -113,7 +120,7 @@ def get_manifest(bucket, id_):
         dict[str: obj]: A job manifest.
     '''
     with tempfile.TemporaryDirectory() as d:
-        s3file = os.path.join(id_, MANIFEST_FILE)
+        s3file = combine_s3_path(id_, MANIFEST_FILE)
         path = os.path.join(d, MANIFEST_FILE)
         try:
             bucket.download_file(s3file, path)
@@ -125,7 +132,7 @@ def get_manifest(bucket, id_):
             return manifest
 
 
-def put_manifest(bucket, id_, manifest):
+def put_manifest(bucket: object, id_: str, manifest: dict) -> None:
     '''It puts a manifest of a job to an object storage.
 
     Args:
@@ -134,7 +141,7 @@ def put_manifest(bucket, id_, manifest):
         manifest (dict[str: obj]): A job manifest.
     '''
     with tempfile.TemporaryDirectory() as d:
-        s3file = os.path.join(id_, MANIFEST_FILE)
+        s3file = combine_s3_path(id_, MANIFEST_FILE)
         path = os.path.join(d, MANIFEST_FILE)
 
         with open(path, mode='w') as f:
@@ -143,7 +150,7 @@ def put_manifest(bucket, id_, manifest):
         os.remove(path)
 
 
-def is_exist_bucket_object(bucket, s3path):
+def is_exist_bucket_object(bucket: object, s3path: str) -> bool:
     '''It returns the object is exist or not on the bucket.
 
     Args:
@@ -160,7 +167,7 @@ def is_exist_bucket_object(bucket, s3path):
         return False
 
 
-def is_finished_job(manifest):
+def is_finished_job(manifest: dict) -> bool:
     '''It returns the job is finished or not.
 
     Args:
@@ -169,23 +176,25 @@ def is_finished_job(manifest):
     Returns:
         bool: If the job is finished, returns true.
     '''
-    finished = [JOB_STATE.DONE.value, JOB_STATE.ERROR.value]
+    finished = [JOB_STATE.DONE.value, JOB_STATE.ERROR.value,
+                JOB_STATE.DELETED.value, JOB_STATE.TIMEOUT.value]
     if manifest[MANIFEST_PARAMS.STATE.value] in finished:
         return True
     else:
         return False
 
 
-def current_time():
+def current_time() -> str:
     '''It returns the current time in ISO format string.
 
     Returns:
         str: Current time.
     '''
-    return datetime.datetime.now().isoformat(timespec='seconds')
+    tz = datetime.timezone(datetime.timedelta(hours=0), 'UTC')
+    return datetime.datetime.now(tz).isoformat(timespec='seconds')
 
 
-def iso_to_datetime(iso_str):
+def iso_to_datetime(iso_str) -> datetime.datetime:
     '''It returns a datetime object from a string of ISO formatted date.
 
     Args:
@@ -194,13 +203,17 @@ def iso_to_datetime(iso_str):
     Returns:
         datetime.datetime
     '''
-    if iso_str:
-        return datetime.datetime.strptime(iso_str, '%Y-%m-%dT%H:%M:%S')
+    if iso_str and iso_str != INITIAL_TIME:
+        try:
+            dt = datetime.datetime.strptime(iso_str, '%Y-%m-%dT%H:%M:%S%z')
+        except ValueError:
+            dt = datetime.datetime.strptime(iso_str, '%Y-%m-%dT%H:%M:%S')
+        return dt
     else:
         return datetime.datetime.utcfromtimestamp(0)
 
 
-def time_iso_to_readable(iso_str):
+def time_iso_to_readable(iso_str: str) -> str:
     '''It returns a human readable date from a string of ISO formatted date.
 
     Args:
@@ -210,7 +223,26 @@ def time_iso_to_readable(iso_str):
         str
     '''
     if iso_str:
-        dt = iso_to_datetime(iso_str)
-        return dt.strftime('%Y/%m/%d %H:%M:%S')
+        if iso_str == INITIAL_TIME:
+            return iso_str
+        else:
+            dt = iso_to_datetime(iso_str)
+            if dt.tzinfo:
+                return dt.strftime('%Y/%m/%d %H:%M:%S %Z')
+            else:
+                return dt.strftime('%Y/%m/%d %H:%M:%S')
     else:
         return ''
+
+
+def combine_s3_path(str_first: str, str_second: str) -> str:
+    '''It returns a combine path for s3.
+
+    Args:
+        str_front (str): The first half of the string you want to combine.
+        str_back (str): The second half of the string you want to combine.
+
+    Returns:
+        str: Combined string.
+    '''
+    return str_first + '/' + str_second

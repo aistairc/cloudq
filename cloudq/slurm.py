@@ -1,4 +1,4 @@
-# abci: cloudq agent for ABCI
+# cloudqd: SLURM's job management and meta job script convert process
 #
 # Copyright 2022
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
@@ -15,54 +15,48 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from enum import Enum
 import configparser
 import glob
-import logging
 import os
 import re
 import shutil
 import subprocess
-from enum import Enum
-
 from .base import AbstractJobManager
 from .base import AbstractMetaJobScriptConverter
-from .common import STDOUT_FILE, STDERR_FILE, PROJECT_DEF_FILE, RESOURCE_DEF_FILE
-from .common import MANIFEST_PARAMS, JOB_STATE
 
-logger = logging.getLogger('CloudQ Agent').getChild('abci')
+from .common import (STDOUT_FILE, STDERR_FILE, RESOURCE_DEF_FILE, MANIFEST_PARAMS, JOB_STATE)
+
+import logging
+logger = logging.getLogger('CloudQ Agent').getChild('slurm')
 
 PROCESS_NAME = 'CloudQ Agent'
 '''Name of this process.
 '''
 
-SYSTEM_NAME = 'abci'
+SYSTEM_NAME = 'slurm'
 
-PATTERN_SUBMIT_ABCI_JOB_ID_EXTRACT = r'^Your job (\d+) \(".*"\) has been submitted'
-'''Regular expression pattern for extracting job ID from submit command on ABCI. (normal job)
+PATTERN_SUBMIT_SLURM_JOB_ID_EXTRACT = r'^Submitted batch job (\d+)'
+'''Regular expression pattern for extracting job ID from submit command on SLURM. (normal job)
 '''
 
-PATTERN_SUBMIT_ABCI_ARRAY_JOB_ID_EXTRACT = r'^Your job-array (\d+).\S+ \(".*"\) has been submitted'
-'''Regular expression pattern for extracting job ID from submit command on ABCI. (array job)
+PATTERN_STAT_SLURM = r'^\s*(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)'
+'''Regular expression pattern for extracting job info from stat command on SLURM.
 '''
 
-PATTERN_STAT_ABCI = r'^\s*(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)'
-'''Regular expression pattern for extracting job info from stat command on ABCI.
+PATTERN_STAT_ARRAYJOB_SLURM = r'^\s*(\d+\_\d+|\d+\_\[\d+\-\d+\])\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)'
+'''Regular expression pattern for array job info from stat command on SLURM.
 '''
 
-PATTERN_FAILD_STAT = r'^failed\s*(\d+)\s+(\S+)'
-'''Regular expression pattern for extracting job info from
-    check timeout and deleted command on ABCI.
+PATTERN_STDOUT_FILE = r'\S+\.out$'
+'''Regular expression pattern of stdout files on SLURM.
 '''
 
-PATTERN_STDOUT_FILE = r'\S+\.o\S+$'
-'''Regular expression pattern of stdout files on ABCI.
+PATTERN_STDERR_FILE = r'\S+\.err$'
+'''Regular expression pattern of stderr files on SLURM.
 '''
 
-PATTERN_STDERR_FILE = r'\S+\.e\S+$'
-'''Regular expression pattern of stderr files on ABCI.
-'''
-
-PATTERN_ARRAYJOB_LOG_FILE = r'^\S+\.\S+\.(\S+)$'
+PATTERN_ARRAYJOB_LOG_FILE = r'^\S+_(\S)+\.\S+$'
 '''Regular expression pattern of stdout/stderr files for array job.
 '''
 
@@ -70,21 +64,26 @@ PATTERN_META_JS_INSTRUCTIONS = r'#\$\s*(\S+)\s*:\s*([\s\S]+)\s*'
 '''Regular expression pattern for meta job script's instructions.
 '''
 
+ERR_FILE_NAME = 'slurm-%j.err'
+'''Error file name
+'''
+
+ARRAYJOB_ERR_FILE_NAME = 'slurm-%A_%a.err'
+'''Error file name for array job
+'''
+
 ENV_VARS_AND_FUNCS = '\
-export ARY_TASK_ID=$SGE_TASK_ID\n\
-export ARY_TASK_FIRST=$SGE_TASK_FIRST\n\
-export ARY_TASK_LAST=$SGE_TASK_LAST\n\
-export ARY_TASK_STEPSIZE=$SGE_TASK_STEPSIZE\n\
-export TMPDIR=$SGE_LOCALDIR\n\
+export ARY_TASK_ID=$SLURM_ARRAY_TASK_ID\n\
+export ARY_TASK_FIRST=$SLURM_ARRAY_TASK_MIN\n\
+export ARY_TASK_LAST=$SLURM_ARRAY_TASK_MAX\n\
+export ARY_TASK_STEPSIZE=$SLURM_ARRAY_TASK_STEP\n\
 \n\
 source /etc/profile.d/modules.sh\n\
-module load singularitypro/3.7\n\
-module load aws-cli/2.1\n\
 \n\
 cq_container_run() {{\n\
-    singularity exec --nv $@\n\
+    echo $@\n\
 }}\n\
-abci_cs_cp() {{\n\
+slurm_cs_cp() {{\n\
     SRC=$1\n\
     DST=$2\n\
     if [ $# -gt 3 ]; then\n\
@@ -104,12 +103,15 @@ abci_cs_cp() {{\n\
 
 
 class LOCAL_MANIFEST_PARAMS(Enum):
+    '''List of local manifest keys.
+    '''
     LOCAL_SUBMIT_OPT = 'submit_opt_local'
 
 
 class META_JS_INSTRUCTION_KEYS(Enum):
+    '''List of meta job script instruction keys.
+    '''
     RUN_ON = 'run_on'
-    PROJECT = 'project'
     RESOURCE = 'resource'
     N_RESOURCE = 'n_resource'
     WALLTIME = 'walltime'
@@ -121,15 +123,13 @@ class MESSAGES(Enum):
     ''' List of console messages.
     '''
     SCRIPT_FILE_NOT_FOUND = 'The script file is not found:{}'
-    IRREGAL_PROJECT_NAME = 'Irregal abstract project name: {}'
     IRREGAL_RESOURCE_NAME = 'Irregal abstract resource name: {}'
-    NO_SYSTEM_NAME_IN_ABSTRACT_PROJECT = 'System name ({}) is not exist in abstract project ({})'
     NO_SYSTEM_NAME_IN_ABSTRACT_RESOURCE = 'System name ({}) is not exist in abstract resource ({})'
     NO_MANDATORY_INSTRUCTION = 'The instruction is not specified: {}'
 
 
-class ABCIJobManager(AbstractJobManager):
-    '''The job management interface for ABCI
+class SlurmJobManager(AbstractJobManager):
+    '''The job management interface for Slurm
     '''
 
     @property
@@ -137,13 +137,6 @@ class ABCIJobManager(AbstractJobManager):
         '''It returns system name
         '''
         return SYSTEM_NAME
-
-    def __init__(self) -> None:
-        '''Constructor
-        '''
-        self.jobid_list = []
-        '''submitted job id's list.
-        '''
 
     def submit_job(self, manifest: dict) -> dict:
         '''It submit a job.
@@ -158,16 +151,21 @@ class ABCIJobManager(AbstractJobManager):
             name = manifest[MANIFEST_PARAMS.LOCAL_NAME.value]
         else:
             name = manifest[MANIFEST_PARAMS.NAME.value]
-        submit_cmd = ['qsub', name]
+        submit_cmd = ['sbatch', name]
 
         if LOCAL_MANIFEST_PARAMS.LOCAL_SUBMIT_OPT.value in manifest:
             if len(manifest[LOCAL_MANIFEST_PARAMS.LOCAL_SUBMIT_OPT.value]) > 0:
                 submit_cmd[1:1] = manifest[LOCAL_MANIFEST_PARAMS.LOCAL_SUBMIT_OPT.value].split()
         if MANIFEST_PARAMS.ARRAY_TASK_ID.value in manifest:
             if len(manifest[MANIFEST_PARAMS.ARRAY_TASK_ID.value]) > 0:
-                submit_cmd[1:1] = ['-t', manifest[MANIFEST_PARAMS.ARRAY_TASK_ID.value]]
+                submit_cmd[1:1] = ['-a', manifest[MANIFEST_PARAMS.ARRAY_TASK_ID.value]]
+                submit_cmd[1:1] = ['-e', ARRAYJOB_ERR_FILE_NAME]
+            else:
+                submit_cmd[1:1] = ['-e', ERR_FILE_NAME]
+        else:
+            submit_cmd[1:1] = ['-e', ERR_FILE_NAME]
         submit_cmd[1:1] = manifest[MANIFEST_PARAMS.SUBMIT_OPT.value].split()
-        submit_cmd[1:1] = ['-cwd']
+        # submit_cmd[1:1] = ['-D ./']
 
         # Store submit command to manifest.
         manifest[MANIFEST_PARAMS.SUBMIT_COMMAND.value] = ' '.join(submit_cmd)
@@ -181,20 +179,17 @@ class ABCIJobManager(AbstractJobManager):
         logger.debug('Run submit command: {}'.format(' '.join(submit_cmd)))
         proc = subprocess.Popen(submit_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         (out, err) = proc.communicate()
-        result = re.match(PATTERN_SUBMIT_ABCI_JOB_ID_EXTRACT, out.decode())
-        if not result:
-            result = re.match(PATTERN_SUBMIT_ABCI_ARRAY_JOB_ID_EXTRACT, out.decode())
+        result = re.match(PATTERN_SUBMIT_SLURM_JOB_ID_EXTRACT, out.decode())
 
         if result:
             logger.info(out.decode())
-            job_id = result.group(1)
-            manifest[MANIFEST_PARAMS.JOB_ID.value] = job_id
-            self.jobid_list.append(job_id)
+            manifest[MANIFEST_PARAMS.JOB_ID.value] = result.group(1)
         else:
             logger.info(err.decode())
             manifest[MANIFEST_PARAMS.ERROR_MSG.value] = err.decode()
         logger.debug('submit_job ended. UUID={} JobID={}'.format(
-            manifest[MANIFEST_PARAMS.UUID.value], manifest[MANIFEST_PARAMS.JOB_ID.value]))
+            manifest[MANIFEST_PARAMS.UUID.value],
+            manifest[MANIFEST_PARAMS.JOB_ID.value]))
         return manifest
 
     def get_jobs_status(self) -> dict:
@@ -205,7 +200,7 @@ class ABCIJobManager(AbstractJobManager):
         '''
         logger.debug('get_jobs_status start.')
         jobs = []
-        cmd = ['qstat']
+        cmd = ['squeue', '-t', 'all']
         logger.debug('Run get job status command: {}'.format(' '.join(cmd)))
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         (out, err) = proc.communicate()
@@ -214,62 +209,39 @@ class ABCIJobManager(AbstractJobManager):
             logger.debug('get_jobs_status ended. {} jobs'.format(len(jobs)))
             return jobs
 
-        list = []
         for line in out:
-            result = re.match(PATTERN_STAT_ABCI, line)
+            result = re.match(PATTERN_STAT_SLURM, line)
             if not result:
-                continue
-
-            jobid = result.group(1)
-            list.append(jobid)
-            qst = result.group(5)
-            state = ''
-            if qst == 'r':
-                state = JOB_STATE.RUN.value
-            elif qst == 'qw':
-                state = JOB_STATE.READY.value
-            elif qst == 'E':
-                state = JOB_STATE.ERROR.value
-            elif qst == 'd':
-                state = JOB_STATE.DELETING.value
-
-            if state != '':
-                logger.debug('  jobid:{}, state:{}'.format(jobid, state))
-                jobs.append((jobid, state))
-
-        logger.debug('self.jobid_list: {}'.format(self.jobid_list))
-        logger.debug('list: {}'.format(list))
-        for submitted_jobid in self.jobid_list:
-            # Get the status of completed jobs
-            if submitted_jobid in list:
-                continue
-
-            check_stat_cmd = ['qacct', '-j', submitted_jobid]
-            logger.debug('Run check timeout and deleted command: {}'.format(
-                ' '.join(check_stat_cmd)))
-            proc = subprocess.Popen(check_stat_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (out, err) = proc.communicate()
-            out = out.decode().splitlines()
-
-            if out == []:
-                jobs.append((submitted_jobid, JOB_STATE.COMPLETING.value))
-
-            for line in out:
-                result = re.match(PATTERN_FAILD_STAT, line)
+                result = re.match(PATTERN_STAT_ARRAYJOB_SLURM, line)
                 if not result:
                     continue
 
-                failed_no = result.group(1)
-                logger.debug('failed_no: ' + str(failed_no))
-                if failed_no == '44':
-                    state = JOB_STATE.TIMEOUT.value
-                elif failed_no in ('48', '100'):
-                    state = JOB_STATE.DELETED.value
-                else:
-                    state = ''
-                logger.debug('  jobid:{}, state:{}'.format(submitted_jobid, state))
-                jobs.append((submitted_jobid, state))
+            jobid = result.group(1)
+            qst = result.group(5)
+            if qst == 'R':
+                state = JOB_STATE.RUN.value
+            elif qst == 'CF' or qst == 'PD' or qst == 'S':
+                state = JOB_STATE.READY.value
+            elif qst == 'F' or qst == 'NF':
+                state = JOB_STATE.ERROR.value
+            elif qst == 'CG':
+                state = JOB_STATE.COMPLETING.value
+            elif qst == 'TO':
+                state = JOB_STATE.TIMEOUT.value
+            elif qst == 'CA':
+                state = JOB_STATE.DELETED.value
+            elif qst == 'CD' or qst == 'PR':
+                continue
+            else:
+                state = ''
 
+            target = '_'
+            idx = jobid.find(target)
+            if idx > 0:
+                jobid = jobid[:idx]
+
+            logger.debug('  jobid:{}, state:{}'.format(jobid, state))
+            jobs.append((jobid, state))
         logger.debug('get_jobs_status ended. {} jobs'.format(len(jobs)))
         return jobs
 
@@ -283,18 +255,20 @@ class ABCIJobManager(AbstractJobManager):
             dict: a job manifest.
         '''
         logger.debug('cancel_job start. UUID={} JobID={}'.format(
-            manifest[MANIFEST_PARAMS.UUID.value], manifest[MANIFEST_PARAMS.JOB_ID.value]))
-        if force:
-            cancel_cmd = ['qdel', '-f', manifest[MANIFEST_PARAMS.JOB_ID.value]]
+            manifest[MANIFEST_PARAMS.UUID.value],
+            manifest[MANIFEST_PARAMS.JOB_ID.value]))
+        if not force:
+            cancel_cmd = ['scancel', manifest[MANIFEST_PARAMS.JOB_ID.value]]
         else:
-            cancel_cmd = ['qdel', manifest[MANIFEST_PARAMS.JOB_ID.value]]
+            return
 
         logger.debug('Run cancel command: {}'.format(' '.join(cancel_cmd)))
         proc = subprocess.Popen(cancel_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         (out, err) = proc.communicate()
         logger.info(out.decode())
         logger.debug('cancel_job ended. UUID={} JobID={}'.format(
-            manifest[MANIFEST_PARAMS.UUID.value], manifest[MANIFEST_PARAMS.JOB_ID.value]))
+            manifest[MANIFEST_PARAMS.UUID.value],
+            manifest[MANIFEST_PARAMS.JOB_ID.value]))
         return manifest
 
     def get_job_log(self, manifest: dict, error: bool) -> dict:
@@ -330,16 +304,16 @@ class ABCIJobManager(AbstractJobManager):
                     shutil.copyfile(src, dst)
                     logger.debug('The log file is created/updated: {}'.format(dst))
                 else:
-                    logstr = 'Unexpected format. Failed to get task ID. UUID:{}, file:{}'
-                    logger.debug(logstr.format(manifest[MANIFEST_PARAMS.UUID.value], src))
+                    logger.debug('Unexpected format. Failed to get task ID. UUID:{}, file:{}'
+                                 .format(manifest[MANIFEST_PARAMS.UUID.value], src))
 
         logger.debug('get_job_log ended. UUID={}, error={}'.format(
             manifest[MANIFEST_PARAMS.UUID.value], error))
         return manifest
 
 
-class ABCIMetaJobScriptConverter(AbstractMetaJobScriptConverter):
-    '''The meta job script conversion interface for ABCI
+class SlurmMetaJobScriptConverter(AbstractMetaJobScriptConverter):
+    '''The meta job script conversion interface for Slurm
     '''
 
     def __init__(self) -> None:
@@ -362,7 +336,7 @@ class ABCIMetaJobScriptConverter(AbstractMetaJobScriptConverter):
         self.unique_name = name
 
     def to_local_job_script(self, manifest: dict, endpoint_url: str, aws_profile: str) -> dict:
-        '''It converts meta job script to job script for ABCI
+        '''It converts meta job script to job script for Slurm
 
         Args:
             manifest (dict): a job manifest.
@@ -376,8 +350,9 @@ class ABCIMetaJobScriptConverter(AbstractMetaJobScriptConverter):
 
         org_script_name = manifest[MANIFEST_PARAMS.NAME.value]
         if not os.path.isfile(org_script_name):
-            manifest[MANIFEST_PARAMS.ERROR_MSG.value] = MESSAGES.SCRIPT_FILE_NOT_FOUND.value.format(
-                org_script_name)
+            msg = MESSAGES.SCRIPT_FILE_NOT_FOUND.value.format(org_script_name)
+            manifest[MANIFEST_PARAMS.ERROR_MSG.value] = msg
+            manifest[MANIFEST_PARAMS.LOCAL_NAME.value] = ''
             return manifest
         with open(org_script_name, 'r') as f:
             org_script = f.read().splitlines()
@@ -413,28 +388,13 @@ class ABCIMetaJobScriptConverter(AbstractMetaJobScriptConverter):
                 manifest[MANIFEST_PARAMS.UUID.value]))
             return None
 
-        if META_JS_INSTRUCTION_KEYS.PROJECT.value in instructions:
-            prj_name = instructions[META_JS_INSTRUCTION_KEYS.PROJECT.value]
-            prj_def = configparser.ConfigParser()
-            prj_def.read(PROJECT_DEF_FILE, encoding='utf-8')
-            if prj_name not in prj_def.sections():
-                raise Exception(MESSAGES.IRREGAL_PROJECT_NAME.value.format(prj_name))
-            try:
-                group = prj_def[prj_name][manifest[MANIFEST_PARAMS.RUN_SYSTEM.value]]
-                if len(group) > 0:
-                    manifest[LOCAL_MANIFEST_PARAMS.LOCAL_SUBMIT_OPT.value] = '-g {}'.format(group)
-            except KeyError:
-                raise Exception(MESSAGES.NO_SYSTEM_NAME_IN_ABSTRACT_PROJECT.value.format(
-                    manifest[MANIFEST_PARAMS.RUN_SYSTEM.value], prj_name))
-        else:
-            raise Exception(MESSAGES.NO_MANDATORY_INSTRUCTION.value.format(
-                META_JS_INSTRUCTION_KEYS.PROJECT.value))
-
         new_script = []
 
         # Add instructions.
         if org_script[0].startswith('#!'):
             new_script.append(org_script[0])
+        else:
+            new_script.append('#!/bin/sh')
         if META_JS_INSTRUCTION_KEYS.RESOURCE.value in instructions:
             if META_JS_INSTRUCTION_KEYS.N_RESOURCE.value in instructions:
                 res_name = instructions[META_JS_INSTRUCTION_KEYS.RESOURCE.value]
@@ -446,10 +406,9 @@ class ABCIMetaJobScriptConverter(AbstractMetaJobScriptConverter):
                 try:
                     res_type = res_def[res_name][manifest[MANIFEST_PARAMS.RUN_SYSTEM.value]]
                     if len(res_type) > 0:
-                        new_script.append('#$ -l {}={}'.format(res_type, res_num))
+                        new_script.append('#SBATCH -C {}*{}'.format(res_type, res_num))
                 except KeyError:
-                    raise Exception(MESSAGES.NO_SYSTEM_NAME_IN_ABSTRACT_RESOURCE.value.format(
-                        manifest[MANIFEST_PARAMS.RUN_SYSTEM.value], res_name))
+                    raise Exception(MESSAGES.IRREGAL_RESOURCE_NAME.value.format(res_name))
             else:
                 raise Exception(MESSAGES.NO_MANDATORY_INSTRUCTION.value.format(
                     META_JS_INSTRUCTION_KEYS.N_RESOURCE.value))
@@ -457,21 +416,28 @@ class ABCIMetaJobScriptConverter(AbstractMetaJobScriptConverter):
             raise Exception(MESSAGES.NO_MANDATORY_INSTRUCTION.value.format(
                 META_JS_INSTRUCTION_KEYS.RESOURCE.value))
         if META_JS_INSTRUCTION_KEYS.WALLTIME.value in instructions:
-            new_script.append('#$ -l h_rt={}'.format(
+            # Set the walltime value as minutes
+            new_script.append('#SBATCH -t {}'.format(
                 instructions[META_JS_INSTRUCTION_KEYS.WALLTIME.value]))
         if META_JS_INSTRUCTION_KEYS.OTHER_OPTS.value in instructions:
             opts = instructions[META_JS_INSTRUCTION_KEYS.OTHER_OPTS.value]
             key = ''
             for opt in opts.split(' '):
                 if len(key) == 0 and opt.startswith('-'):
-                    key = opt
+                    if opt.find('=') >= 0:
+                        new_script.append('#SBATCH {}'.format(opt))
+                    else:
+                        key = opt
                     continue
 
                 if len(key) > 0:
-                    new_script.append('#$ {} {}'.format(key, opt))
+                    if key.startswith('--'):
+                        new_script.append('#SBATCH {}={}'.format(key, opt))
+                    else:
+                        new_script.append('#SBATCH {} {}'.format(key, opt))
                     key = ''
                 else:
-                    new_script.append('#$ {}'.format(opt))
+                    new_script.append('#SBATCH {}'.format(opt))
         new_script.append('')
 
         # Add environment variables and functions.
@@ -484,15 +450,19 @@ class ABCIMetaJobScriptConverter(AbstractMetaJobScriptConverter):
         if META_JS_INSTRUCTION_KEYS.CONTAINER_IMG.value in instructions:
             for index in range(len(instructions[META_JS_INSTRUCTION_KEYS.CONTAINER_IMG.value])):
                 url = instructions[META_JS_INSTRUCTION_KEYS.CONTAINER_IMG.value][index]
-                new_script.append('export CONTAINER_IMG{}={}'.format(index, url))
+                new_script.append('CONTAINER_IMG{}_URL={}'.format(index, url))
+                new_script.append('export CONTAINER_IMG{}={}'.format(index, os.path.basename(url)))
+                new_script.append(
+                    'singularity pull $CONTAINER_IMG{} $CONTAINER_IMG{}_URL'.format(index, index))
+                new_script.append('unset CONTAINER_IMG{}_URL'.format(index))
                 new_script.append('')
 
         if first_script_line:
             new_script.extend(org_script[first_script_line-1:])
 
-        # if META_JS_INSTRUCTION_KEYS.CONTAINER_IMG.value in instructions:
-        #     for index in range(len(instructions[META_JS_INSTRUCTION_KEYS.CONTAINER_IMG.value])):
-        #         new_script.append('rm $CONTAINER_IMG{}'.format(index))
+        if META_JS_INSTRUCTION_KEYS.CONTAINER_IMG.value in instructions:
+            for index in range(len(instructions[META_JS_INSTRUCTION_KEYS.CONTAINER_IMG.value])):
+                new_script.append('rm $CONTAINER_IMG{}'.format(index))
 
         root, ext = os.path.splitext(org_script_name)
         manifest[MANIFEST_PARAMS.LOCAL_NAME.value] = '{}_local{}'.format(root, ext)
