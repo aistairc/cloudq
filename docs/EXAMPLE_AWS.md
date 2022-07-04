@@ -46,9 +46,6 @@ For detail about installation and configuration, refer to the [installation guid
 
    The following example creates the bucket having a URL `s3://cloudq-xxxxx`.
    The URL must be unique.
-
-   It uses the AWS profile `cloudq_job` to create the bucket.
-
    AWS endpoint URL has to be properly set because you use Tokyo region.
    AWS endpoint URL for Tokyo region is `s3.ap-northeast-1.amazonaws.com` which is shown in [this page](https://docs.aws.amazon.com/general/latest/gr/s3.html).
 
