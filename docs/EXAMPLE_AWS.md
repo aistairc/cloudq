@@ -94,10 +94,10 @@ For detail about installation and configuration, refer to the [installation guid
          InstanceType: t2.micro
          MinCount: 0
          MaxCount: 8
-       - Name: t2small
-         InstanceType: t2.small
-         MinCount: 0
-         MaxCount: 8
+       - Name: t2small            # Add this line
+         InstanceType: t2.small   # Add this line
+         MinCount: 0              # Add this line
+         MaxCount: 8              # Add this line
    (snip)
    ```
 

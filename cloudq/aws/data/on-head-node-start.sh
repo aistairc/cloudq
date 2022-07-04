@@ -33,11 +33,8 @@ sudo -u ec2-user aws configure set aws_access_key_id $1 --profile cs
 sudo -u ec2-user aws configure set aws_secret_access_key $2 --profile cs
 sudo -u ec2-user aws configure set region $3 --profile cs
 
-curl "https://cloudq-dev-q9rdfivpmyj6.s3.abci.ai/cloudq.tar.gz" -o "cloudq.tar.gz"
-tar zxf cloudq.tar.gz
-aws s3 cp s3://$4/config.ini ./cloudq/data/
-pip3.8 install -r requirements.txt
-pip3.8 install .
+pip3.8 install 'cloudq'
+aws s3 cp s3://$4/config.ini $(pip3.8 show cloudq | grep Location | cut -d ' ' -f 2)/cloudq/data/config.ini
 pip3.8 install certifi
 
 aws s3 cp s3://$4/cloudq.service ./
