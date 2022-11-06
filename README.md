@@ -365,3 +365,7 @@ Example meta jobscripts can be found in `cloudq/example` directory.
   - Download container image from NGC and then train MNIST using PyTorch on a singularity container
 - mjob_tf_mnist.sh
   - Download container image from NGC and then train MNIST using TensorFlow on a singularity container
+
+## Publications
+
+- Shinichiro Takizawa Masaaki Shimizu, Hidemoto Nakada, Toshiya Matsuba, and Ryousei Takano, "CloudQ: A Secure AI / HPC Cloud Bursting System,"  9th International Workshop on HPC User Support Tools (HUST22), November 2022.
