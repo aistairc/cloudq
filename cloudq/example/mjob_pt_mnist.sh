@@ -1,4 +1,4 @@
-#$ run_on:        ABCI
+#$ run_on:        abci
 #$ project:       project001
 #$ resource:      resource001
 #$ n_resource:    1
@@ -7,7 +7,7 @@
 #$ container_img: docker://nvcr.io/nvidia/pytorch:20.12-py3
 #
 #======================================================================================
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -27,5 +27,5 @@
 # Submission Example
 # $ cloudqcli submit --script cloudq/example/mjob_pt_mnist.sh
 
-wget -O cnn_mnist.py https://raw.githubusercontent.com/pytorch/examples/master/mnist/main.py
+wget -O cnn_mnist.py https://raw.githubusercontent.com/pytorch/examples/0f0c9131ca5c79d1332dce1f4c06fe942fbdc665/mnist/main.py
 cq_container_run $CONTAINER_IMG0 python cnn_mnist.py

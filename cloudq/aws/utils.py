@@ -1,6 +1,6 @@
 # util: cloudq builder for AWS utilities
 #
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -73,13 +73,13 @@ class Utils:
         '''
         pass
 
-    def get_data_dir_path(self) -> list:
+    def get_data_dir_path(self, preset_data: str) -> list:
         '''It returns path of data directory.
 
         Returns:
             list(dict): path of data directory.
         '''
-        return os.path.join(os.path.dirname(__file__), 'data')
+        return os.path.join(os.path.expanduser('~/.cloudq/aws/'), preset_data)
 
     def get_aws_info(self, profile: str = None) -> dict:
         '''It returns profile of AWS CLI.
@@ -102,12 +102,13 @@ class Utils:
                 aws_info[key] = result
         return aws_info
 
-    def create_cloud_formation_stack(self, cluster_name: str, zone: str) -> dict:
+    def create_cloud_formation_stack(self, cluster_name: str, zone: str, preset_data: str) -> dict:
         '''It creates Cloud Formation stack.
 
         Args:
             cluster_name (str): Name of AWS compute cluster.
             zone (str): Availability zone.
+            preset_data (str): Name of preset data.
         Returns:
             dict: Informations of cloud formation stack.
         '''
@@ -118,8 +119,8 @@ class Utils:
 
         command = ['aws', 'cloudformation', 'create-stack']
         command += ['--stack-name', stack_info['StackName']]
-        command += ['--template-body', 'file://{}'.format(
-            os.path.join(self.get_data_dir_path(), 'cloud-stack.yaml'))]
+        command += ['--template-body', 'file://{}'.format(os.path.join(
+            os.path.expanduser('~/.cloudq/aws/'), preset_data, 'cloud-stack.yaml'))]
         command += ['--parameters']
         command += ['ParameterKey=PublicCIDR,ParameterValue=10.0.0.0/24']
         command += ['ParameterKey=PrivateCIDR,ParameterValue=10.0.16.0/24']
@@ -194,7 +195,7 @@ class Utils:
         return is_created
 
     def create_cluster_config(self, output_dir_path: str, default_aws_info: dict, cs_aws_info: dict,
-                              stack_info: dict, keypair: str) -> str:
+                              stack_info: dict, keypair: str, preset_data: str) -> str:
         '''It creates cluster config file
 
         Args:
@@ -206,7 +207,7 @@ class Utils:
         Returns:
             str: Path of Parallel Cluster configuretion file
         '''
-        with open(os.path.join(self.get_data_dir_path(), 'cluster-config.yaml')) as fp:
+        with open(os.path.join(self.get_data_dir_path(preset_data), 'cluster-config.yaml')) as fp:
             config = yaml.safe_load(fp)
 
         head_script = 's3://{}/on-head-node-start.sh'.format(stack_info['BucketName'])
@@ -272,6 +273,50 @@ class Utils:
         dst_path = os.path.join(output_dir_path, 'config.ini')
         with open(dst_path, 'w') as file:
             config.write(file)
+
+        return dst_path
+
+    def create_autoexec_config(self, output_dir_path: str, log_level: str, preset_data: str) -> str:
+        '''It creates script file for CloudQ Agent.
+
+        Args:
+            output_dir_path (str): Path of output directory.
+            log_level (str): Specify the log level.
+        Returns:
+            str: Path of CloudQ Agent script file.
+        '''
+        src_path = os.path.join(os.path.expanduser('~/.cloudq/aws/'), preset_data, 'autoexec.sh')
+
+        with open(src_path, 'r') as file:
+            tmp_list = []
+            is_target = False
+            for row in file:
+                if not row.startswith('#') and 'cloudqd' in row:
+                    is_target = True
+                    split_list = row.split()
+                    if '--log_level' in split_list:
+                        x = split_list.index('--log_level') + 1
+                        if len(split_list) > x:
+                            split_list[x] = log_level
+                            split_list = " ".join(split_list)
+                            tmp_list.append(split_list + '\n')
+                        else:
+                            split_list = " ".join(split_list)
+                            tmp_list.append(split_list + ' ' + log_level + '\n')
+                    else:
+                        split_list.append('--log_level')
+                        split_list.append(log_level)
+                        split_list = " ".join(split_list)
+                        tmp_list.append(split_list + '\n')
+                else:
+                    tmp_list.append(row)
+            if is_target is False:
+                raise Exception('Failed to set log level.')
+
+        dst_path = os.path.join(output_dir_path, 'autoexec.sh')
+        with open(dst_path, 'w', newline="\n") as file:
+            for i in range(len(tmp_list)):
+                file.write(tmp_list[i])
 
         return dst_path
 

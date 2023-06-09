@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 #======================================================================================
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -17,12 +17,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #======================================================================================
-echo "on-compute-node-start script was started. args: $#"
-
-amazon-linux-extras install -y python3.8
-
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-./aws/install
-
-echo "on-compute-node-start script was completed."
+export PATH=$PATH:/opt/slurm/bin/
+/usr/local/bin/cloudqd --daemon

@@ -1,6 +1,6 @@
 # cloudqd: SLURM's job management and meta job script convert process
 #
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -147,6 +147,7 @@ class SlurmJobManager(AbstractJobManager):
             dict: a job manifest added local parameters.
         '''
         logger.debug('submit_job start. UUID={}'.format(manifest[MANIFEST_PARAMS.UUID.value]))
+        logger.info('submit job (slurm): start. UUID={}'.format(manifest[MANIFEST_PARAMS.UUID.value]))
         if MANIFEST_PARAMS.LOCAL_NAME.value in manifest:
             name = manifest[MANIFEST_PARAMS.LOCAL_NAME.value]
         else:
@@ -190,6 +191,9 @@ class SlurmJobManager(AbstractJobManager):
         logger.debug('submit_job ended. UUID={} JobID={}'.format(
             manifest[MANIFEST_PARAMS.UUID.value],
             manifest[MANIFEST_PARAMS.JOB_ID.value]))
+        logger.info('submit job (slurm): succeeded. UUID={} JobID={}'.format(
+            manifest[MANIFEST_PARAMS.UUID.value],
+            manifest[MANIFEST_PARAMS.JOB_ID.value]))
         return manifest
 
     def get_jobs_status(self) -> dict:
@@ -199,6 +203,7 @@ class SlurmJobManager(AbstractJobManager):
             list: job status list.
         '''
         logger.debug('get_jobs_status start.')
+        logger.info('stat job (slurm): start.')
         jobs = []
         cmd = ['squeue', '-t', 'all']
         logger.debug('Run get job status command: {}'.format(' '.join(cmd)))
@@ -243,6 +248,7 @@ class SlurmJobManager(AbstractJobManager):
             logger.debug('  jobid:{}, state:{}'.format(jobid, state))
             jobs.append((jobid, state))
         logger.debug('get_jobs_status ended. {} jobs'.format(len(jobs)))
+        logger.info('stat job (slurm): succeeded. {} jobs'.format(len(jobs)))
         return jobs
 
     def cancel_job(self, manifest: dict, force: bool) -> dict:
@@ -257,6 +263,9 @@ class SlurmJobManager(AbstractJobManager):
         logger.debug('cancel_job start. UUID={} JobID={}'.format(
             manifest[MANIFEST_PARAMS.UUID.value],
             manifest[MANIFEST_PARAMS.JOB_ID.value]))
+        logger.info('cancel job (slurm): start. UUID={} JobID={}'.format(
+            manifest[MANIFEST_PARAMS.UUID.value],
+            manifest[MANIFEST_PARAMS.JOB_ID.value]))
         if not force:
             cancel_cmd = ['scancel', manifest[MANIFEST_PARAMS.JOB_ID.value]]
         else:
@@ -267,6 +276,9 @@ class SlurmJobManager(AbstractJobManager):
         (out, err) = proc.communicate()
         logger.info(out.decode())
         logger.debug('cancel_job ended. UUID={} JobID={}'.format(
+            manifest[MANIFEST_PARAMS.UUID.value],
+            manifest[MANIFEST_PARAMS.JOB_ID.value]))
+        logger.info('cancel job (slurm): succeeded. UUID={} JobID={}'.format(
             manifest[MANIFEST_PARAMS.UUID.value],
             manifest[MANIFEST_PARAMS.JOB_ID.value]))
         return manifest

@@ -75,9 +75,39 @@ For detail about installation and configuration, refer to the [installation guid
 
    As CloudQ Builder for AWS internally uses [AWS ParallelCluster](https://github.com/aws/aws-parallelcluster), you also need to install Node.js on which AWS ParallelCluster depends.
 
-5. Edit configuration files for your AWS cluster
+5. Create preset
 
-   Edit `Scheduling::SlurmQueues::ComputeResources` section of `(package directory)/cloudq/aws/data/cluster-config.yaml` so that `t2.micro` and `t2.small` instances can be used.
+   You can create presets of your cluster configurations.
+   One your create a preset, you can create clusters with the same configuration defined in the preset anytime.
+
+   ```console
+   $ cloudqaws preset --preset_name your_preset_name
+   ```
+
+   CloudQ provides following example presets.
+
+   - `enable_docker`: Create AWS Compute Cluster with Docker and Singularity available at compute node.
+   - `enable_gpu`: Create AWS Compute Cluster that can execute CUDA with GPGPU at compute node.
+
+   To use them, copy the presets to the CloudQ configuration directory as follows.
+
+   ```console
+   $ cd `pip3 show cloudq | grep Location | cut -d ' ' -f 2`/cloudq/aws/example
+   $ cp -r preset-name $HOME/.cloudq/aws/
+   ```
+
+6. Edit configuration files of the preset
+
+   Configuration files of your preset are stored in `$HOME/.cloudq/aws/your_preset_name`.
+   Edit following files to change the configuration of your AWS clusters.
+
+   - `cloud-stack.yaml`: To change VPC configuration or security group
+   - `cluster-config.yaml`: To change the settings of the cluster created by AWS Parallel Cluster
+   - `on-head-node-start.sh`: To change the procedures when cluster head node starts
+   - `on-compute-node-start.sh`: To change the procedures when cluster compute nodes start
+
+   The following example creates a cluster with two types of instances: `t2.micro` and `t2.small`.
+   For this purpuse, you need to edit `$HOME/.cloudq/aws/your_preset_name/cluster-config.yaml`.
 
    ```yaml
    (snip)
@@ -97,16 +127,16 @@ For detail about installation and configuration, refer to the [installation guid
    (snip)
    ```
 
-6. Edit configuration files for your CloudQ Client
+7. Edit configuration files of your CloudQ Client
 
-   Edit `default` section of `(package directory)/cloudq/data/config.ini`.
+   Edit `default` section of `$HOME/.cloudq/client/config.ini`.
 
    ```ini
    [default]
    # specify your pc name
    name = your_pc
 
-   # specify the AWS profile
+   # specify the AWS profile you created
    aws_profile = cloudq_job
 
    # specify S3 Tokyo region endpoint
@@ -115,7 +145,7 @@ For detail about installation and configuration, refer to the [installation guid
    cloudq_bucket = cloudq-xxxxx
    ```
 
-   To use meta jobscripts, you also need to edit `(package directory)/cloudq/data/resource.ini`.
+   To use meta jobscripts, you also need to edit `$HOME/.cloudq/client/resource.ini`.
    On AWS, a resource in CloudQ corresponds to an instance type.
    The key must be the name of cluster you will create.
    The following example, the name of the cluster is set as `your_aws_cluster`.
@@ -128,13 +158,14 @@ For detail about installation and configuration, refer to the [installation guid
    your_aws_cluster = t2.small
    ```
 
-7. Create your AWS cluster
+8. Create your AWS cluster
 
    The following example creates a cluster named `your_aws_cluster` with the above configuration.
    The cluster name must be unique in your AWS account.
 
    ```console
-   (cloudq) $ cloudqaws create --name your_aws_cluster \
+   (cloudq) $ cloudqaws create --preset_name your_preset_name \
+   --name your_aws_cluster \
    --keypair aws_cloudq \
    --cs_profile cloudq_job \
    --cs_endpoint https://s3.ap-northeast-1.amazonaws.com \
@@ -142,18 +173,24 @@ For detail about installation and configuration, refer to the [installation guid
    ```
 
    The creation takes several minutes to complete.
-   After completion you can check the status of your cluster as follows.
+   After completion you can check the status of your cluster.
 
    ```console
-   # Check the status of the cluster
    (cloudq) $ cloudqaws list
-   # SSH login to the cluster head node
+   Cluster Name    Status     Creation Time
+   --------------------------------------------------
+   your_aws_clust  COMPLETED  YYYY/MM/DD hh:mm:ss UTC
+   ```
+
+   You can ssh login to the cluster head node.
+
+   ```console
    (cloudq) $ pcluster ssh --cluster-name your_aws_cluster -i ~/.ssh/aws_cloudq.pem
    ```
 
-   You can also check any logs on Amazon CloudWatch Logs.
+   You can also check logs on Amazon CloudWatch Logs.
 
-8. Use your AWS cluster
+9. Use your AWS cluster
 
    As CloudQ recognize your AWS cluster as `your_aws_cluster`, you need to specify the name when you submit a job.
    The following exmaple submits a local job script.
@@ -162,12 +199,10 @@ For detail about installation and configuration, refer to the [installation guid
    (cloudq) $ cloudqcli submit --script job.sh --submit_to your_aws_cluster
    ```
 
-9. Stop your AWS cluster
+10. Stop your AWS cluster
 
-   After you use your AWS cluster you can stop it if you no more use it.
+    After you use your AWS cluster you can stop it if you no more use it.
 
-   ```console
-   (cloudq) $ cloudqaws delete --name your_aws_cluster
-   ```
-
-   You you no more use the job bucket and SSH key pair, you can also delete them.
+    ```console
+    (cloudq) $ cloudqaws delete --name your_aws_cluster
+    ```

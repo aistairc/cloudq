@@ -4,7 +4,7 @@
 #$-l h_rt=01:00:00
 #
 #======================================================================================
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -27,7 +27,7 @@
 
 source /etc/profile
 source /etc/profile.d/modules.sh
-module load singularitypro/3.7
+module load singularitypro/3.9
 
 export TMPDIR=$SGE_LOCALDIR
 

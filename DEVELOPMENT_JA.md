@@ -1,6 +1,6 @@
 # Development Notes of CloudQ Agent
 
-Copyright 2022 National Institute of Advanced Industrial Science and Technology (AIST), Japan and
+Copyright 2022-2023 National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 Hitachi, Ltd.
 
 

@@ -1,6 +1,6 @@
 # add_logs: Add head node logs to Amazon CloudWatch Logs
 #
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #

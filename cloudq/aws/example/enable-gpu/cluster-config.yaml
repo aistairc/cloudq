@@ -1,0 +1,46 @@
+Region: ap-northeast-1
+Image:
+  Os: alinux2
+HeadNode:
+  InstanceType: t2.micro
+  Networking:
+    SubnetId: subnet-xxx
+    SecurityGroups:
+    - sg-xxx
+  Ssh:
+    KeyName: keypair_name
+  CustomActions:
+    OnNodeStart:
+      Script: s3://xxx-bucket/on-head-node-start.sh
+      Args:
+      - ""
+  Iam:
+    S3Access:
+      - BucketName: xxx-bucket
+Scheduling:
+  Scheduler: slurm
+  SlurmQueues:
+  - Name: queue1
+    ComputeResources:
+    - Name: g4dnxlarge
+      InstanceType: g4dn.xlarge
+      MinCount: 0
+      MaxCount: 8
+    CustomActions:
+      OnNodeStart:
+        Script: s3://xxx-bucket/on-compute-node-start.sh
+        Args:
+        - ""
+    Iam:
+      S3Access:
+        - BucketName: xxx-bucket
+    Networking:
+      SubnetIds:
+      - subnet-xxx
+      SecurityGroups:
+      - sg-xxx
+Monitoring:
+  Logs:
+    CloudWatch:
+      Enabled: true
+      RetentionInDays: 60

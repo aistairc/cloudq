@@ -50,7 +50,7 @@ For detail about installation and configuration, refer to the [installation guid
 
 4. Edit configuration files
 
-   Edit `default` section of `(package directory)/cloudq/data/config.ini`.
+   Edit `default` section of `$HOME/.cloudq/client/config.ini`.
 
    ```ini
    [default]
@@ -66,7 +66,7 @@ For detail about installation and configuration, refer to the [installation guid
    cloudq_bucket = cloudq-xxxxx
    ```
 
-   To use meta jobscripts, edit `(package directory)/cloudq/data/project.ini`.
+   To use meta jobscripts, edit `$HOME/.cloudq/client/project.ini`.
    On ABCI, a project in CloudQ corresponds to an ABCI group.
    The key must be `abci`.
 
@@ -78,7 +78,7 @@ For detail about installation and configuration, refer to the [installation guid
    abci = gXXZZZZZ
    ```
 
-   To use meta jobscripts, you also need to edit `(package directory)/cloudq/data/resource.ini`.
+   To use meta jobscripts, you also need to edit `$HOME/.cloudq/client/resource.ini`.
    On ABCI, a resource in CloudQ corresponds to a resource type.
    The key must be `abci`.
 
@@ -109,7 +109,7 @@ For detail about installation and configuration, refer to the [installation guid
 2. Install CloudQ
 
    ```console
-   [username@es1 ~]$ module load gcc/9.3.0 python/3.8
+   [username@es1 ~]$ module load python/3.11
    [username@es1 ~]$ python3 -m venv ~/cloudq
    [username@es1 ~]$ . ~/cloudq/bin/activate
    [username@es1 ~](cloudq) $ pip install --upgrade pip setuptools
@@ -118,7 +118,7 @@ For detail about installation and configuration, refer to the [installation guid
 
 3. Edit configuration files
 
-   Edit `default` section of `(package directory)/cloudq/data/config.ini`.
+   Edit `default` section of `$HOME/.cloudq/agent/config.ini`.
 
    ```ini
    [default]
@@ -140,7 +140,7 @@ For detail about installation and configuration, refer to the [installation guid
 
    ```console
    [username@es1 ~]$ screen
-   [username@es1 ~]$ module load gcc/9.3.0 python/3.8
+   [username@es1 ~]$ module load python/3.11
    [username@es1 ~]$ . ~/cloudq/bin/activate
    [username@es1 ~](cloudq) $ cloudqd --daemon
    ```

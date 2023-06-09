@@ -25,7 +25,8 @@ $ pip install .
 
 A CloudQ Agent needs to be installed on a server on which the Agent can submit jobs to the system you want to use.
 
-To install Agent, you need to specify one of the optional dependencies for a system where you use CloudQ: `abci`.
+To install Agent, you need to specify one of the optional dependencies for a system where you use CloudQ.
+Currently "[ABCI](https://abci.ai/)" is supported.
 
 Below is an example to install CloudQ Agent for ABCI.
 
@@ -64,33 +65,41 @@ $ pip install -r requirements_aws.txt
 $ pip install .
 ```
 
-As CloudQ Builder for AWS internally uses [AWS ParallelCluster](https://github.com/aws/aws-parallelcluster), you also need to install Node.js on which AWS ParallelCluster depends.
+As CloudQ Builder for AWS internally uses [AWS ParallelCluster](https://github.com/aws/aws-parallelcluster), you also need to install Node.js.
 
 
 ## Configure CloudQ
 
+Default configuration files are generated when you first execute one of CloudQ commands.
+
 ### Procedure for Changing Configuration
 
-To change the configuration after installation, you need to edit configuration files under the installed package directory.
+To change the configuration after installation, you need to edit configuration files under your home directory.
 
-- `(package directory)/cloudq/data/`: Configuration files for Client and Agent
-- `(package directory)/cloudq/aws/data/`: Configuration files for Builder for AWS
+- `$HOME/.cloudq/client/`: Configuration files for Client
+- `$HOME/.cloudq/agent/`: Configuration files for Agent
+- `$HOME/.cloudq/aws/`: Configuration files for Builder for AWS
 
-The path of the package directory can be found by the following command.
-
-```console
-$ pip show cloudq
-```
-
-You can open to edit `(package directory)/cloudq/data/config.ini` by the following command.
+You can open to edit `$HOME/.cloudq/client/config.ini` by the following command.
 
 ```console
-$ vi `pip show cloudq | grep Location | cut -d ' ' -f 2`/cloudq/data/config.ini
+$ vi $HOME/.cloudq/client/config.ini
 ```
+
+The files stored under `$HOME/.cloudq` are as follows.
+- CloudQ Client (`$HOME/.cloudq/client/`)
+  - config.ini
+  - project definition file(project.ini)
+  - resource definition file(resource.ini)
+- CloudQ Agent (`$HOME/.cloudq/agent/`)
+  - config.ini
+- CloudQ Builder for AWS (`$HOME/.cloudq/aws/`)
+  - config.ini
+  - preset data
 
 ### Client Configuration
 
-You need to edit `default` section of `(package directory)/cloudq/data/config.ini`.
+You need to edit `default` section of `$HOME/.cloudq/client/config.ini`.
 
 ```ini
 [default]
@@ -100,16 +109,18 @@ aws_profile = default
 
 cloudq_endpoint_url = https://s3.abci.ai
 cloudq_bucket = cloudq
+log_level = INFO
 ```
 
-- **name**: name of the server you use CloudQ Client
+- **name**: name of the server you use CloudQ Client. Must be lower case.
 - **aws_profile**: AWS profile used for accessing the job bucket
 - **cloudq_endpoint_url**: endpoint URL of the object storage
 - **cloudq_bucket**: name of the job bucket
+- **log_level**: specify the log level
 
 If you want to use meta jobscripts, you also need to edit two meta jobscript configuration files.
 
-One is the project definition file whose path is `(package directory)/cloudq/data/project.ini`.
+One is the project definition file whose path is `$HOME/.cloudq/client/project.ini`.
 A project is used to define a research project and it can be used for resource authorization or charge on systems.
 
 This is an example configuration of the project definition file.
@@ -132,7 +143,7 @@ The following table shows the rule of how to specify key and project names for e
 | ABCI   | abci              | ABCI group name  |
 | AWS    | your cluster name | value is ignored |
 
-The other is the resource definition file whose path is `(package directory)/cloudq/data/resource.ini`.
+The other is the resource definition file whose path is `$HOME/.cloudq/client/resource.ini`.
 A resource is a type of server on which your jobs run.
 
 This is an example configuration of the resource definition file.
@@ -157,7 +168,7 @@ The following table shows the rule of how to specify key and resource names for 
 
 ### Agent Configuration
 
-You need to edit `default` and `agent` sections of `(package directory)/cloudq/data/config.ini`.
+You need to edit `default` and `agent` sections of `$HOME/.cloudq/agent/config.ini`.
 
 ```ini
 [default]
@@ -167,6 +178,7 @@ aws_profile = default
 
 cloudq_endpoint_url = https://s3.abci.ai
 cloudq_bucket = cloudq
+log_level = INFO
 
 [agent]
 type = abci
@@ -176,10 +188,11 @@ cloudq_directory = ~/.cloudq
 ```
 
 - **default**
-  - **name**: name of the server you use CloudQ Client
+  - **name**: name of the server you use CloudQ Agent. Must be lower case.
   - **aws_profile**: AWS profile used for accessing the job bucket
   - **cloudq_endpoint_url**: endpoint URL of the object storage
   - **cloudq_bucket**: name of the job bucket
+  - **log_level**: specify the log level
 - **agent**
   - **type**: scheduler type. `abci` and `slurm` are supported.
   - **num_procs**: number of processes that submit jobs to the system
@@ -188,9 +201,9 @@ cloudq_directory = ~/.cloudq
 
 ### Builder Configuration
 
-You need to edit several files under `(package directory)/cloudq/aws/data` directory depending on what cluster you want to create.
+You need to edit several files under `$HOME/.cloudq/aws` directory depending on what cluster you want to create.
 
-- **cloud-stack.yaml**: To change configurations of the VPC and security groups
-- **cluster-config.yaml**: To change the configuration of the cluster. It is a YAML file of AWS ParallelCluster configuration.
+- **cloud-stack.yaml**: To change configurations of the VPC and security groups.  This is a YAML file of Cloud Formation configuration.
+- **cluster-config.yaml**: To change the configuration of the cluster. This is a YAML file of AWS ParallelCluster configuration.
 - **on-head-node-start.sh**: To run some commands during the initialization of the cluster head node
 - **on-compute-node-start.sh**: To run some commands during the initialization of compute nodes

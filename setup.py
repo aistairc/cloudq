@@ -1,6 +1,6 @@
 # setup: cloudq setup script
 #
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -65,7 +65,8 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     include_package_data=True,
     package_data={
-        PACKAGE_NAME: ['data/*', 'example/*', 'aws/*', 'aws/data/*'],
+        PACKAGE_NAME: ['data/*', 'example/*', 'aws/*', 'aws/data/*', 'aws/data/default/*',
+                       'aws/example/enable-docker/*', 'aws/example/enable-gpu/*'],
     },
     zip_safe=False,
     platforms='any',

@@ -4,7 +4,7 @@
 #$-l h_rt=01:00:00
 #
 #======================================================================================
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -30,7 +30,7 @@
 
 source /etc/profile
 source /etc/profile.d/modules.sh
-module load singularitypro/3.7
+module load singularitypro/3.9
 
 export TMPDIR=$SGE_LOCALDIR
 
@@ -51,5 +51,5 @@ echo "  SGE_TASK_LAST:     ": $SGE_TASK_LAST
 echo "  SGE_TASK_STEPSIZE: ": $SGE_TASK_STEPSIZE
 echo "  Train parameter:   ": ${TASKSETS[$IDX]}
 
-wget -O cnn_mnist.py https://raw.githubusercontent.com/pytorch/examples/master/mnist/main.py
+wget -O cnn_mnist.py https://raw.githubusercontent.com/pytorch/examples/0f0c9131ca5c79d1332dce1f4c06fe942fbdc665/mnist/main.py
 singularity exec --nv $SIGIMG python cnn_mnist.py ${TASKSETS[$IDX]}

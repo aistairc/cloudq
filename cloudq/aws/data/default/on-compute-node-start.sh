@@ -1,5 +1,6 @@
-# cloudq: cloud storage-based meta scheduler
+#!/bin/bash
 #
+#======================================================================================
 # Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
@@ -15,4 +16,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-__version__ = '1.2.0'
+#======================================================================================
+echo "on-compute-node-start script was started. args: $#"
+
+amazon-linux-extras install -y python3.8
+
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+./aws/install
+
+echo "on-compute-node-start script was completed."

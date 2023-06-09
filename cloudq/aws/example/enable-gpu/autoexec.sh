@@ -1,5 +1,6 @@
-# cloudq: cloud storage-based meta scheduler
+#!/bin/bash
 #
+#======================================================================================
 # Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
@@ -15,4 +16,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-__version__ = '1.2.0'
+#======================================================================================
+export PATH=$PATH:/opt/slurm/bin/
+/usr/local/bin/cloudqd --daemon

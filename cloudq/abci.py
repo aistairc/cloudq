@@ -1,6 +1,6 @@
 # abci: cloudq agent for ABCI
 #
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -78,8 +78,8 @@ export ARY_TASK_STEPSIZE=$SGE_TASK_STEPSIZE\n\
 export TMPDIR=$SGE_LOCALDIR\n\
 \n\
 source /etc/profile.d/modules.sh\n\
-module load singularitypro/3.7\n\
-module load aws-cli/2.1\n\
+module load singularitypro/3.9\n\
+module load aws-cli/2.11\n\
 \n\
 cq_container_run() {{\n\
     singularity exec --nv $@\n\
@@ -154,6 +154,7 @@ class ABCIJobManager(AbstractJobManager):
             dict: a job manifest added local parameters.
         '''
         logger.debug('submit_job start. UUID={}'.format(manifest[MANIFEST_PARAMS.UUID.value]))
+        logger.info('submit job (abci): start. UUID={}'.format(manifest[MANIFEST_PARAMS.UUID.value]))
         if MANIFEST_PARAMS.LOCAL_NAME.value in manifest:
             name = manifest[MANIFEST_PARAMS.LOCAL_NAME.value]
         else:
@@ -195,6 +196,8 @@ class ABCIJobManager(AbstractJobManager):
             manifest[MANIFEST_PARAMS.ERROR_MSG.value] = err.decode()
         logger.debug('submit_job ended. UUID={} JobID={}'.format(
             manifest[MANIFEST_PARAMS.UUID.value], manifest[MANIFEST_PARAMS.JOB_ID.value]))
+        logger.info('submit job (abci): succeeded. UUID={} JobID={}'.format(
+            manifest[MANIFEST_PARAMS.UUID.value], manifest[MANIFEST_PARAMS.JOB_ID.value]))
         return manifest
 
     def get_jobs_status(self) -> dict:
@@ -204,6 +207,7 @@ class ABCIJobManager(AbstractJobManager):
             list: job status list.
         '''
         logger.debug('get_jobs_status start.')
+        logger.info('stat job (abci): start.')
         jobs = []
         cmd = ['qstat']
         logger.debug('Run get job status command: {}'.format(' '.join(cmd)))
@@ -214,14 +218,14 @@ class ABCIJobManager(AbstractJobManager):
             logger.debug('get_jobs_status ended. {} jobs'.format(len(jobs)))
             return jobs
 
-        list = []
+        list_ = []
         for line in out:
             result = re.match(PATTERN_STAT_ABCI, line)
             if not result:
                 continue
 
             jobid = result.group(1)
-            list.append(jobid)
+            list_.append(jobid)
             qst = result.group(5)
             state = ''
             if qst == 'r':
@@ -238,10 +242,10 @@ class ABCIJobManager(AbstractJobManager):
                 jobs.append((jobid, state))
 
         logger.debug('self.jobid_list: {}'.format(self.jobid_list))
-        logger.debug('list: {}'.format(list))
+        logger.debug('list: {}'.format(list_))
         for submitted_jobid in self.jobid_list:
             # Get the status of completed jobs
-            if submitted_jobid in list:
+            if submitted_jobid in list_:
                 continue
 
             check_stat_cmd = ['qacct', '-j', submitted_jobid]
@@ -271,6 +275,7 @@ class ABCIJobManager(AbstractJobManager):
                 jobs.append((submitted_jobid, state))
 
         logger.debug('get_jobs_status ended. {} jobs'.format(len(jobs)))
+        logger.info('stat job (abci): succeeded. {} jobs'.format(len(jobs)))
         return jobs
 
     def cancel_job(self, manifest: dict, force: bool) -> dict:
@@ -284,6 +289,8 @@ class ABCIJobManager(AbstractJobManager):
         '''
         logger.debug('cancel_job start. UUID={} JobID={}'.format(
             manifest[MANIFEST_PARAMS.UUID.value], manifest[MANIFEST_PARAMS.JOB_ID.value]))
+        logger.info('cancel job (abci): start. UUID={} JobID={}'.format(
+            manifest[MANIFEST_PARAMS.UUID.value], manifest[MANIFEST_PARAMS.JOB_ID.value]))
         if force:
             cancel_cmd = ['qdel', '-f', manifest[MANIFEST_PARAMS.JOB_ID.value]]
         else:
@@ -294,6 +301,8 @@ class ABCIJobManager(AbstractJobManager):
         (out, err) = proc.communicate()
         logger.info(out.decode())
         logger.debug('cancel_job ended. UUID={} JobID={}'.format(
+            manifest[MANIFEST_PARAMS.UUID.value], manifest[MANIFEST_PARAMS.JOB_ID.value]))
+        logger.info('cancel job (abci): succeeded. UUID={} JobID={}'.format(
             manifest[MANIFEST_PARAMS.UUID.value], manifest[MANIFEST_PARAMS.JOB_ID.value]))
         return manifest
 

@@ -1,4 +1,4 @@
-#$ run_on:        ABCI
+#$ run_on:        abci
 #$ project:       project001
 #$ resource:      resource001
 #$ n_resource:    1
@@ -7,7 +7,7 @@
 #$ container_img: docker://nvcr.io/nvidia/tensorflow:19.07-py3
 #
 #======================================================================================
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #

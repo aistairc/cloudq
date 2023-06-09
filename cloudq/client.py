@@ -1,6 +1,6 @@
 # client: cloudq client command line tool
 #
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -25,6 +25,7 @@ import tempfile
 import traceback
 import uuid
 from enum import Enum
+import shutil
 
 import boto3
 import botocore
@@ -64,6 +65,8 @@ CONFIG_PARAMS = [
      'type': str, 'mandatory': True},
     {'section': 'default',  'key': 'cloudq_bucket',
      'type': str, 'mandatory': True},
+    {'section': 'default',  'key': 'log_level',
+     'type': str, 'mandatory': False,  'default': 'INFO'},
     {'section': 'client',   'key': 'resource_profile',
      'type': str, 'mandatory': False, 'default': ''},
     {'section': 'client',   'key': 'project_profile',
@@ -246,13 +249,13 @@ def show_job_log(config: configparser.ConfigParser,
                 raise Exception(MESSAGES.TASK_NOT_FOUND.value.format(args.tid))
         else:
             objects = bucket.objects.filter(Prefix=combine_s3_path(args.id, filename))
-            for object in objects:
-                pos = object.key.find('.')
+            for object_ in objects:
+                pos = object_.key.find('.')
                 if pos >= 0:
-                    tid = object.key[pos+1:]
+                    tid = object_.key[pos+1:]
                 else:
                     tid = ''
-                s3files[tid] = object.key
+                s3files[tid] = object_.key
 
     elif args.agent:
         s3files[''] = combine_s3_path(AGENT_LOG_PREFIX, args.agent)
@@ -567,6 +570,24 @@ def _check_config(config: configparser.ConfigParser) -> None:
                 config[param['section']][param['key']] = param['default']
 
 
+def show_config(config: configparser.ConfigParser) -> None:
+    '''It show configuration parameters.
+
+    Args:
+        config (configparser.ConfigParser): CloudQ CLI configuration.
+    '''
+    for param in CONFIG_PARAMS:
+        try:
+            logger.info('section={}, key={}, value={}'.format(
+                param['section'], param['key'],
+                config.get(param['section'], param['key'])
+            ))
+        except configparser.NoOptionError:
+            logger.info('section={}, key={}, value=None'.format(
+                param['section'], param['key']
+            ))
+
+
 def _construct_argparser() -> argparse.ArgumentParser:
     '''It returns arguemnt parser.
 
@@ -588,6 +609,7 @@ def _construct_argparser() -> argparse.ArgumentParser:
                                'Available only to local job script')
     parser_submit.add_argument('--submit_opt', help='specify a command line arguments of job '
                                'submission command.  Available only to local job script')
+    parser_submit.add_argument('--log_level', help='specify log level. ')
     parser_submit.set_defaults(func=submit_job)
 
     # stat
@@ -595,6 +617,7 @@ def _construct_argparser() -> argparse.ArgumentParser:
     parser_stat = subparsers.add_parser('stat', help=help_message_stat,
                                         description=help_message_stat)
     parser_stat.add_argument('--id', help='job id')
+    parser_stat.add_argument('--log_level', help='specify log level. ')
     parser_stat.set_defaults(func=stat_job)
 
     # log
@@ -609,6 +632,7 @@ def _construct_argparser() -> argparse.ArgumentParser:
     parser_log.add_argument('--error',
                             help='show the standard error, instead of standard output',
                             action='store_true')
+    parser_log.add_argument('--log_level', help='specify log level. ')
     parser_log.set_defaults(func=show_job_log)
 
     # cancel
@@ -616,6 +640,7 @@ def _construct_argparser() -> argparse.ArgumentParser:
     parser_cancel = subparsers.add_parser(
         'cancel', help=help_message_cancel, description=help_message_cancel)
     parser_cancel.add_argument('--id', help='job id')
+    parser_cancel.add_argument('--log_level', help='specify log level. ')
     parser_cancel.set_defaults(func=cancel_job)
 
     # delete
@@ -626,6 +651,7 @@ def _construct_argparser() -> argparse.ArgumentParser:
     ex_group_del.add_argument('--id', help='job id')
     ex_group_del.add_argument('--agent', help='agent name')
     ex_group_del.add_argument('--all', help='delete all completed jobs', action='store_true')
+    parser_del.add_argument('--log_level', help='specify log level. ')
     parser_del.set_defaults(func=del_job)
 
     # stage out
@@ -633,24 +659,27 @@ def _construct_argparser() -> argparse.ArgumentParser:
     parser_stageout = subparsers.add_parser('stageout', help=help_message_stageout,
                                             description=help_message_stageout)
     parser_stageout.add_argument('--id', help='job id')
+    parser_stageout.add_argument('--log_level', help='specify log level. ')
     parser_stageout.set_defaults(func=stageout)
 
     # list
     help_message_list = 'Show list of waiting/running jobs'
     parser_list = subparsers.add_parser('list', help=help_message_list,
                                         description=help_message_list)
+    parser_list.add_argument('--log_level', help='specify log level. ')
     parser_list.set_defaults(func=list_jobs)
 
     # history
     help_message_history = 'Show list of completed jobs'
     parser_history = subparsers.add_parser('history', help=help_message_history,
                                            description=help_message_history)
+    parser_history.add_argument('--log_level', help='specify log level. ')
     parser_history.set_defaults(func=history_jobs)
 
     return parser
 
 
-def init_logger() -> None:
+def init_logger(args: argparse.Namespace, config: configparser.ConfigParser) -> None:
     '''It setups logger object.
     '''
     stdout_handler = logging.StreamHandler(sys.stdout)
@@ -664,37 +693,62 @@ def init_logger() -> None:
 
     logging.basicConfig(handlers=handlers)
 
+    if args.log_level == 'INFO' or args.log_level == 'DEBUG':
+        log_level = args.log_level
+    else:
+        log_level = config['default']['log_level']
+
     global logger
     logger = logging.getLogger(PROCESS_NAME)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(log_level)
+
+
+def create_default_config() -> str:
+    '''It creates default configuration files in home directory.
+
+    Returns:
+        str: configration file path.
+    '''
+    global DATA_DIR
+    DATA_DIR = os.path.expanduser('~/.cloudq/client')
+    default_dir = os.path.join(os.path.dirname(__file__), 'data')
+    config_path = os.path.join(DATA_DIR, CONFIG_FILE)
+
+    if not os.path.exists(DATA_DIR):
+        shutil.copytree(default_dir, DATA_DIR)
+
+    if not os.path.exists(config_path):
+        config_path = os.path.join(default_dir, CONFIG_FILE)
+
+    return config_path
 
 
 def main() -> None:
     '''the entry point.
     '''
-    init_logger()
-
     try:
-        global DATA_DIR
-        DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-
-        if not os.path.isfile(os.path.join(DATA_DIR, CONFIG_FILE)):
+        config_path = create_default_config()
+        if not os.path.isfile(config_path):
             raise Exception(MESSAGES.NO_CONFIG_FILE.value.format(CONFIG_FILE))
-
-        config = configparser.ConfigParser()
-        config.read(os.path.join(DATA_DIR, CONFIG_FILE), encoding=CONFIG_FILE_ENCODING)
 
         parser = _construct_argparser()
         args = parser.parse_args()
 
+        config = configparser.ConfigParser()
+        config.read(config_path, encoding=CONFIG_FILE_ENCODING)
+
         _check_config(config)
+        init_logger(args, config)
+        logger.info('=================== config ====================')
+        show_config(config)
+        logger.info('===============================================')
 
         bucket = _get_bucket(config)
 
         args.func(config, args, bucket)
     except Exception as e:
         logger.error('Error: {}\n\n'.format(e))
-        logger.debug(traceback.format_exc())
+        logger.info(traceback.format_exc())
         if 'parser' in locals():
             parser.print_help()
 

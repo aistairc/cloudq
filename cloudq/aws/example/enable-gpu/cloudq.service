@@ -1,0 +1,14 @@
+[Unit]
+Description = cloudq auto start unit file.
+After=local-fs.target
+ConditionPathExists=/opt/cloudq/bin
+
+[Service]
+ExecStart=/opt/cloudq/bin/autoexec.sh
+Restart=no
+Type=simple
+User=ec2-user
+Group=ec2-user
+
+[Install]
+WantedBy=multi-user.target

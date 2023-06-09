@@ -4,7 +4,7 @@
 #$-l h_rt=01:00:00
 #
 #======================================================================================
-# Copyright 2022
+# Copyright 2022-2023
 #   National Institute of Advanced Industrial Science and Technology (AIST), Japan and
 #   Hitachi, Ltd.
 #
@@ -27,7 +27,7 @@
 
 source /etc/profile
 source /etc/profile.d/modules.sh
-module load singularitypro/3.7
+module load singularitypro/3.9
 
 export TMPDIR=$SGE_LOCALDIR
 
@@ -35,7 +35,7 @@ SIGURL=docker://nvcr.io/nvidia/pytorch:20.12-py3
 SIGFILE=pytorch-20.12-py3.img
 
 singularity pull $SIGFILE $SIGURL
-wget -O cnn_mnist.py https://raw.githubusercontent.com/pytorch/examples/master/mnist/main.py
+wget -O cnn_mnist.py https://raw.githubusercontent.com/pytorch/examples/0f0c9131ca5c79d1332dce1f4c06fe942fbdc665/mnist/main.py
 singularity exec --nv $SIGFILE python cnn_mnist.py
 
 rm $SIGFILE
